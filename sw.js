@@ -1,6 +1,6 @@
-// Offline support: the app shell is cached on install; news is network-first with a cached fallback;
+// Offline support: the app shell is cached on install; config is network-first with a cached fallback;
 // fonts are cached the first time they load. The AI coach and Google sign-in always need the network.
-const VERSION = 'speakdaily-v1.1.0';
+const VERSION = 'speakdaily-v1.2.0';
 const SHELL = [
   '/', '/index.html', '/css/app.css', '/manifest.webmanifest',
   '/js/app.js', '/js/store.js', '/js/content.js', '/js/drive.js', '/js/voice.js', '/js/audio.js', '/js/content-extra.js',
@@ -36,8 +36,8 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.origin !== location.origin) return;
 
-  // News and config: network first, fall back to the last saved copy.
-  if (url.pathname === '/api/feed' || url.pathname === '/api/config') {
+  // Config: network first, fall back to the last saved copy.
+  if (url.pathname === '/api/config') {
     e.respondWith(fetch(req).then((res) => {
       if (res.ok) caches.open(VERSION).then((c) => c.put(req, res.clone()));
       return res;

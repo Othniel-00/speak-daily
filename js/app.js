@@ -238,11 +238,11 @@ function viewToday() {
       <footer>${esc(t.verse.ref)} (KJV)</footer>
     </blockquote>
 
-    <button class="row-card" data-action="tab" data-tab="read">
-      ${icon('book')}
-      <span><b>Today's reading</b><small>${(d?.reads || []).length} of ${s.settings.readGoal} stories read. News from Liberia, tech and business.</small></span>
-      ${icon('chev')}
-    </button>
+    <article class="mind">
+      <p class="q">"${esc(t.mind.q)}"</p>
+      <p class="who"><b>${esc(t.mind.n)}</b><br><small>${esc(t.mind.r)}</small></p>
+      <button class="btn ghost small" data-action="speak" data-text="${esc(t.mind.q)} ${esc(t.mind.n)}.">${icon('speaker')} Hear it, then say it</button>
+    </article>
   </section>`;
 }
 
@@ -265,7 +265,6 @@ function stepBody(which, idx) {
       <article class="passage"><h3>${esc(t.passage.t)}</h3><p>${esc(t.passage.p)}</p></article>
       <div class="btns">
         <button class="btn ghost" data-action="speak" data-text="${esc(t.passage.p)}">${icon('speaker')} Hear it first</button>
-        <button class="btn ghost" data-action="tab-close" data-tab="read">${icon('book')} Read a news story instead</button>
       </div>
       <h4>Check your pronunciation</h4>
       <p class="hint">Record yourself reading the passage, then tap <b>Check my pronunciation</b>. The coach shows which words were not clear and how to say them.</p>
@@ -487,75 +486,6 @@ function viewSession() {
   </div>`;
 }
 
-/* ---------------- Read tab ---------------- */
-const FEED_KEY = 'speakdaily.feed';
-let feedLoading = false;
-function cachedFeed() { try { return JSON.parse(localStorage.getItem(FEED_KEY) || 'null'); } catch { return null; } }
-async function loadFeed(force = false) {
-  const c = cachedFeed();
-  if (!navigator.onLine || feedLoading) return;
-  if (!force && c && Date.now() - new Date(c.fetchedAt).getTime() < 30 * 60000) return;
-  feedLoading = true; if (tab === 'read') render();
-  try {
-    const r = await fetch('/api/feed');
-    if (r.ok) { const j = await r.json(); localStorage.setItem(FEED_KEY, JSON.stringify(j)); }
-  } catch { /* keep cached */ }
-  feedLoading = false; if (tab === 'read') render();
-}
-
-function viewRead() {
-  const t = today(); const s = store.get(); const d = s.days[t.key];
-  const reads = d?.reads || []; const goal = s.settings.readGoal;
-  const feed = cachedFeed();
-  const pct = Math.min(1, reads.length / goal);
-  const sections = feed?.sections?.filter((x) => x.items.length) || [];
-  return `
-  <section class="read">
-    <header class="page-head">
-      <h1>Today's reading</h1>
-      <div class="goal" style="--p:${pct}">
-        <span>${reads.length >= goal ? `Goal reached: ${reads.length} stories read today. Readers become speakers.` : `${reads.length} of ${goal} stories read today`}</span>
-        <i></i>
-      </div>
-    </header>
-
-    <article class="mind">
-      <p class="q">"${esc(t.mind.q)}"</p>
-      <p class="who"><b>${esc(t.mind.n)}</b><br><small>${esc(t.mind.r)}</small></p>
-      <button class="btn ghost small" data-action="speak" data-text="${esc(t.mind.q)} ${esc(t.mind.n)}.">${icon('speaker')} Hear it, then say it</button>
-    </article>
-
-    <blockquote class="verse">
-      <p>${esc(t.verse.t)}</p>
-      <footer>${esc(t.verse.ref)} (KJV)</footer>
-    </blockquote>
-
-    ${!feed && !navigator.onLine ? `<div class="note">You're offline and no news is saved yet. Connect once and the stories will stay on your phone for offline reading.</div>` : ''}
-    ${feed ? `<p class="muted fetched">${navigator.onLine ? '' : 'Offline. '}Updated ${ago(feed.fetchedAt)}. <button class="link" data-action="refresh-feed">${feedLoading ? 'Refreshing…' : 'Refresh'}</button></p>` : feedLoading ? '<p class="muted">Loading today’s stories…</p>' : ''}
-
-    ${sections.map((sec) => `
-      <section class="news">
-        <h2>${esc(sec.title)}</h2>
-        <ul>
-          ${sec.items.map((it) => `
-          <li class="${reads.includes(it.link) ? 'is-read' : ''}">
-            <a href="${esc(it.link)}" target="_blank" rel="noopener" data-action="read-item" data-link="${esc(it.link)}">
-              <span class="h">${esc(it.title)}</span>
-              <small>${esc(it.source || '')}${it.date ? ` ${ago(it.date)}` : ''}${reads.includes(it.link) ? ' (read)' : ''}</small>
-            </a>
-            <button class="say" data-action="speak" data-text="${esc(it.title)}" aria-label="Hear the headline">${icon('speaker')}</button>
-          </li>`).join('')}
-        </ul>
-      </section>`).join('')}
-
-    ${feed?.history?.length ? `
-    <section class="news history">
-      <h2>On this day</h2>
-      <ul>${feed.history.map((h) => `<li><a href="${esc(h.link || '#')}" target="_blank" rel="noopener" data-action="read-item" data-link="${esc(h.link || '')}"><span class="h"><b>${h.year}</b> ${esc(h.text)}</span></a></li>`).join('')}</ul>
-    </section>` : ''}
-  </section>`;
-}
-
 /* ---------------- Coach tab ---------------- */
 function md(text = '') {
   // Very small, safe markdown: bold, italics, line breaks, bullet lines.
@@ -655,7 +585,7 @@ function scrollThread() { requestAnimationFrame(() => window.scrollTo({ top: doc
 /* ---------------- Weekly report ---------------- */
 function weekStats() {
   const s = store.get();
-  const out = { days: 0, sessions: 0, minutes: 0, quiz: [0, 0], reads: 0, words: [], fixes: [], clarity: [], pace: [], fillers: 0, talks: 0, accuracy: [], journals: 0 };
+  const out = { days: 0, sessions: 0, minutes: 0, quiz: [0, 0], words: [], fixes: [], clarity: [], pace: [], fillers: 0, talks: 0, accuracy: [], journals: 0 };
   for (let i = 6; i >= 0; i--) {
     const dt = new Date(); dt.setDate(dt.getDate() - i);
     const k = store.todayKey(dt); const d = s.days[k];
@@ -665,7 +595,6 @@ function weekStats() {
     out.sessions += (m ? 1 : 0) + (e ? 1 : 0);
     out.minutes += d.minutes || 0;
     if (d.quiz) { out.quiz[0] += d.quiz.score; out.quiz[1] += d.quiz.total; }
-    out.reads += (d.reads || []).length;
     if (d.morning?.done?.[3]) out.words.push(C.pick(C.WORDS, store.dayIndex(k)).w);
     if (d.fix) out.fixes.push(d.fix);
     if ((d.journal || '').trim().length > 20) out.journals++;
@@ -697,7 +626,7 @@ function weeklyDue() {
 function weekText(w) {
   return [
     `Days practised: ${w.days} of 7. Sessions finished: ${w.sessions} of 14. Minutes: ${w.minutes}.`,
-    `Grammar quiz: ${w.quiz[1] ? `${w.quiz[0]} of ${w.quiz[1]} right` : 'not taken'}. Journal entries: ${w.journals}. News stories read: ${w.reads}.`,
+    `Grammar quiz: ${w.quiz[1] ? `${w.quiz[0]} of ${w.quiz[1]} right` : 'not taken'}. Journal entries: ${w.journals}.`,
     `New words learned: ${w.words.join(', ') || 'none'}.`,
     `Things he chose to fix after listening: ${w.fixes.join('; ') || 'none'}.`,
     `AI-checked talks: ${w.talks}. Average clarity ${avg(w.clarity) ?? '-'} of 5, average pace ${avg(w.pace) ?? '-'} of 5, filler words in total ${w.fillers}.`,
@@ -746,7 +675,7 @@ function viewProgress() {
   const practised = days.filter(([, d]) => store.sessionDone(d, 'morning') || store.sessionDone(d, 'evening')).length;
   const sessions = days.reduce((n, [, d]) => n + (store.sessionDone(d, 'morning') ? 1 : 0) + (store.sessionDone(d, 'evening') ? 1 : 0), 0);
   const quiz = days.reduce((a, [, d]) => (d.quiz ? [a[0] + d.quiz.score, a[1] + d.quiz.total] : a), [0, 0]);
-  const reads = days.reduce((n, [, d]) => n + (d.reads?.length || 0), 0);
+  const words = days.filter(([, d]) => d.morning?.done?.[3]).length;
   const journals = days.filter(([, d]) => (d.journal || '').trim()).sort((a, b) => b[0].localeCompare(a[0]));
   // last 35 days grid
   const cells = [];
@@ -768,7 +697,7 @@ function viewProgress() {
       <div><dt>Days practised</dt><dd>${practised}</dd></div>
       <div><dt>Sessions finished</dt><dd>${sessions}</dd></div>
       <div><dt>Quiz score</dt><dd>${quiz[1] ? Math.round((quiz[0] / quiz[1]) * 100) + '%' : 'None yet'}</dd></div>
-      <div><dt>Stories read</dt><dd>${reads}</dd></div>
+      <div><dt>Words learned</dt><dd>${words}</dd></div>
     </dl>
     <section class="cal">
       <h2>Last 5 weeks</h2>
@@ -841,7 +770,6 @@ function viewSettings() {
         <h3>You</h3>
         <label>Your name<input class="field" data-bind="name" value="${esc(s.profile.name)}"></label>
         <label>Practice started on<input class="field" type="date" data-bind="startDate" value="${esc(s.profile.startDate)}"></label>
-        <label>Stories to read each day<input class="field" type="number" min="1" max="10" data-bind="readGoal" value="${s.settings.readGoal}"></label>
       </section>
 
       <section>
@@ -858,7 +786,8 @@ function viewSettings() {
 function render() {
   applyPhase();
   const main = $('#main');
-  const views = { today: viewToday, read: viewRead, coach: viewCoach, progress: viewProgress };
+  const views = { today: viewToday, coach: viewCoach, progress: viewProgress };
+  if (!views[tab]) tab = 'today';
   const active = document.activeElement;
   const keepFocus = active && active.id === 'chat-input';
   const selStart = keepFocus ? active.selectionStart : 0;
@@ -873,10 +802,6 @@ function render() {
 function autoGrow() { const ta = $('#chat-input'); if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; } }
 
 /* ---------------- events ---------------- */
-function markRead(link) {
-  if (!link) return;
-  store.update((s) => { const d = store.day(); d.updatedAt = Date.now(); if (!d.reads.includes(link)) d.reads.push(link); });
-}
 
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-action]');
@@ -884,8 +809,8 @@ document.addEventListener('click', async (e) => {
   const a = el.dataset.action;
   const t = today();
   switch (a) {
-    case 'tab': tab = el.dataset.tab; window.scrollTo(0, 0); render(); if (tab === 'read') loadFeed(); break;
-    case 'tab-close': session = null; stopTimer(); tab = el.dataset.tab; render(); loadFeed(); break;
+    case 'tab': tab = el.dataset.tab; window.scrollTo(0, 0); render(); break;
+    case 'tab-close': session = null; stopTimer(); tab = el.dataset.tab; render(); break;
     case 'open-session': session = { which: el.dataset.which, step: Math.max(0, store.day()[el.dataset.which].done.findIndex((x) => !x)) }; if (session.step < 0) session.step = 0; render(); break;
     case 'close-session': if (rec.ctl) await finishRecord(); session = null; stopTimer(); timer.key = null; voice.stopSpeaking(); render(); break;
     case 'goto': { const n = +el.dataset.step; if (n >= 0 && n < 4) { if (rec.ctl) await finishRecord(); session.step = n; render(); $('.sheet-body')?.scrollTo(0, 0); } break; }
@@ -930,8 +855,6 @@ document.addEventListener('click', async (e) => {
       chatBusy = false; render();
       break;
     }
-    case 'read-item': markRead(el.dataset.link); drive.scheduleSync(); setTimeout(render, 400); break;
-    case 'refresh-feed': loadFeed(true); break;
     case 'mode': chatMode = el.dataset.mode; render(); break;
     case 'starter': sendChat(el.dataset.text); break;
     case 'retry': store.update((s) => { s.chat = s.chat.filter((m) => !m.error); }); runChat(false); break;
@@ -977,7 +900,6 @@ document.addEventListener('input', (e) => {
     else if (b === 'name') s.profile.name = el.value || 'friend';
     else if (b === 'startDate' && el.value) s.profile.startDate = el.value;
     else if (b === 'passcode') s.settings.passcode = el.value.trim();
-    else if (b === 'readGoal') s.settings.readGoal = Math.max(1, Math.min(10, +el.value || 3));
     else if (b === 'morningTime' || b === 'eveningTime') s.settings[b] = el.value;
     else if (b === 'speakReplies') s.settings.speakReplies = el.checked;
   }, silent);
@@ -1018,7 +940,7 @@ drive.onStatus((st) => { driveStatus = st; if (settingsOpen) render(); });
 window.addEventListener('speakdaily:merged', () => render());
 window.addEventListener('speakdaily:saved', () => { if (tab === 'today' || settingsOpen) render(); });
 try { navigator.storage?.persist?.(); } catch { /* optional */ }
-window.addEventListener('online', () => { render(); loadFeed(); });
+window.addEventListener('online', () => render());
 window.addEventListener('offline', () => render());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { applyPhase(); render(); } });
 
@@ -1038,7 +960,6 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ap
   }
   drive.configure(config.googleClientId);
   render();
-  loadFeed();
   if (store.get().drive.connected) drive.sync({ interactive: false });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

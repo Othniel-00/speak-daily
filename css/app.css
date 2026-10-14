@@ -152,25 +152,12 @@ small { color: var(--muted); }
 /* page heads */
 .page-head { margin: 14px 0 12px; }
 .page-head.row { display: flex; align-items: center; justify-content: space-between; }
-.goal { display: grid; gap: 8px; color: var(--muted); }
-.goal i { display: block; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; position: relative; }
-.goal i::after { content: ''; position: absolute; inset: 0; width: calc(var(--p) * 100%); background: var(--accent); border-radius: inherit; transition: width .6s; }
 
-/* Read */
+/* Quote card (Today) */
 .mind { background: var(--deep); color: var(--deep-ink); border-radius: var(--r-lg); padding: 22px 20px; margin: 16px 0; }
 .mind .q { font: 700 23px/1.3 var(--font-display); letter-spacing: -.01em; }
 .mind .who small { color: inherit; opacity: .8; }
 .mind .btn { border-color: color-mix(in srgb, var(--deep-ink) 40%, transparent); color: var(--deep-ink); }
-.fetched { font-size: 14px; }
-.news { margin: 22px 0; }
-.news h2 { font-size: 20px; }
-.news ul { list-style: none; margin: 0; padding: 0; }
-.news li { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.news li a { flex: 1; text-decoration: none; display: flex; flex-direction: column; gap: 3px; }
-.news .h { font-weight: 700; line-height: 1.35; }
-.news li.is-read .h { color: var(--muted); font-weight: 400; }
-.news small { font-size: 14px; }
-.history .h { font-weight: 400; }
 
 /* Coach */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }

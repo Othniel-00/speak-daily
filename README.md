@@ -10,14 +10,14 @@ A daily morning and evening coach for clear speaking, grammar and reading. It is
 - **Evening practice (20 min):** listen back to your talk and pick one thing to fix, write a 5–8 sentence journal (the AI coach can correct it), a grammar lesson with a quiz, and shadowing a clear speaker.
 - **Reminders:** one tap adds two daily calendar alerts to your iPhone, at the exact times you choose. They ring even when the app is closed or you are offline.
 - **AI coach:** chat by typing or talking. It has four modes: just talk, correct my writing, role-play (interviews, presentations, selling) and explain grammar. Replies can be read aloud.
-- **Daily reading:** news from Liberia, tech in Africa, world tech, and business; a great mind's quote; a Bible verse (KJV); and "On this day" in history. Reading goal and a streak.
-- **Progress:** streak, a 5-week calendar, quiz score, stories read, all your recordings, and your journal history.
+- **Daily lines to say aloud:** a great mind's quote and a Bible verse (KJV) on the Today screen.
+- **Progress:** streak, a 5-week calendar, quiz score, words learned, all your recordings, and your journal history.
 - **AI listening feedback (v1.1):** after a 1-minute talk, the coach scores clarity, pace, grammar and confidence, counts filler words, and gives one thing to fix tomorrow.
 - **Pronunciation check (v1.1):** record yourself reading the passage or the shadowing sentences; the coach lists unclear words with tips.
 - **Weekly report (v1.1):** this-week stats on the Progress tab and an AI-written report with next week's focus (reminder on Sunday/Monday).
 - **More content (v1.1):** 82 tongue twisters, 201 words, 12 grammar weeks, 100 talk topics, 60 journal prompts, 80 shadowing lines, 30 reading passages, 50 quotes, 51 verses.
 - **Google Drive backup:** progress and recordings are saved to a `Speak Daily` folder in your own Drive.
-- **Offline:** all practice content, recordings and progress live on the phone. The news you last loaded stays readable offline. Only the AI coach and Drive saving need the internet.
+- **Offline:** all practice content, recordings and progress live on the phone. Only the AI coach and Drive saving need the internet.
 
 ## Install on iPhone
 
@@ -62,7 +62,6 @@ api/listen.js         AI listening feedback + pronunciation check (Gemini)
 lib/gemini.js         Gemini helper with automatic backup models
 js/audio.js           Converts recordings to WAV for the AI
 js/content-extra.js   Extra practice content (v1.1)
-api/feed.js           Daily news + On this day
 api/reminders.js      Calendar file with daily alerts
 api/config.js         Public settings for the app
 dev-server.mjs        Local preview: node dev-server.mjs

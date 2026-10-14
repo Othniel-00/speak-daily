@@ -14,7 +14,7 @@ function fresh() {
     version: 1,
     updatedAt: Date.now(),
     profile: { name: 'Othniel', startDate: START_DATE_DEFAULT },
-    settings: { morningTime: '04:55', eveningTime: '20:55', passcode: '', speakReplies: true, readGoal: 3 },
+    settings: { morningTime: '04:55', eveningTime: '20:55', passcode: '', speakReplies: true },
     days: {},
     chat: [],
     reports: [],
@@ -63,7 +63,7 @@ export function day(key = todayKey()) {
       updatedAt: Date.now(),
       morning: { done: [false, false, false, false] },
       evening: { done: [false, false, false, false] },
-      journal: '', quiz: null, fix: '', reads: [], minutes: 0,
+      journal: '', quiz: null, fix: '', minutes: 0,
     };
   }
   return state.days[key];

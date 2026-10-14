@@ -240,7 +240,7 @@ export const JOURNAL_PROMPTS = [
   'Explain one idea from class as if you are the teacher.',
   'What made you smile today?',
   'Write about your plans for this weekend.',
-  'What news story caught your attention today? Why?',
+  'What English word or phrase did you hear today that you want to use? Why?',
   'Describe how you spent your evening.',
   'Write about a goal and the first step you took today.',
 ];
