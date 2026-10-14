@@ -45,10 +45,11 @@ small { color: var(--muted); }
 /* ---------- top bar ---------- */
 .topbar { display: flex; align-items: center; justify-content: space-between; height: 60px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font: 700 18px var(--font); letter-spacing: -.01em; }
-.logo { width: 42px; height: 42px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; box-shadow: var(--shadow); }
-.mark { display: inline-flex; align-items: center; gap: 2.5px; height: 18px; }
-.mark i { width: 3.5px; border-radius: 2px; background: var(--blue); }
-.mark i:nth-child(1) { height: 7px; } .mark i:nth-child(2) { height: 17px; } .mark i:nth-child(3) { height: 11px; } .mark i:nth-child(4) { height: 6px; }
+.logo { width: 42px; height: 42px; border-radius: 13px; background: radial-gradient(110% 110% at 50% 0%, #5A84F4, #2D5BE3 55%, #1A3BAE); display: grid; place-items: center; box-shadow: 0 8px 18px -10px rgba(31, 69, 194, .9); }
+.mark { display: inline-flex; align-items: center; gap: 2.5px; height: 20px; }
+.mark i { width: 3.5px; border-radius: 2px; background: #fff; }
+.mark i:last-child { background: #FFD27A; }
+.mark i:nth-child(1) { height: 6px; } .mark i:nth-child(2) { height: 13px; } .mark i:nth-child(3) { height: 19px; } .mark i:nth-child(4) { height: 11px; } .mark i:nth-child(5) { height: 5px; }
 .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; border-radius: 50%; cursor: pointer; flex: none; }
 .icon-btn.round { background: var(--surface); box-shadow: var(--shadow); }
 .icon-btn.on { color: var(--blue); }
