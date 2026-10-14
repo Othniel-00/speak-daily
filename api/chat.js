@@ -39,8 +39,11 @@ async function anthropic(system, messages) {
   return j.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
 }
 
-async function gemini(system, messages) {
-  const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+// If a model is busy (high demand / rate limit) or unavailable, try the next one.
+const GEMINI_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite'];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function geminiOnce(model, system, messages) {
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
@@ -50,9 +53,29 @@ async function gemini(system, messages) {
       generationConfig: { maxOutputTokens: 800, temperature: 0.7 },
     }),
   });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j?.error?.message || `Gemini error ${r.status}`);
-  return (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const err = new Error(j?.error?.message || `Gemini error ${r.status}`);
+    err.retryable = [404, 429, 500, 503].includes(r.status);
+    throw err;
+  }
+  const text = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+  if (!text.trim()) { const err = new Error('The coach returned an empty answer.'); err.retryable = true; throw err; }
+  return text;
+}
+
+async function gemini(system, messages) {
+  const models = [...new Set([process.env.GEMINI_MODEL, ...GEMINI_FALLBACKS].filter(Boolean))];
+  let last;
+  for (let i = 0; i < models.length; i++) {
+    try { return await geminiOnce(models[i], system, messages); }
+    catch (e) {
+      last = e;
+      if (!e.retryable) throw e;
+      if (i === 0) await sleep(600);
+    }
+  }
+  throw new Error(`All AI models are busy right now. Please try again in a minute. (${last?.message || 'unknown error'})`);
 }
 
 export default async function handler(req, res) {
