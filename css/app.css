@@ -336,3 +336,32 @@ summary { font-weight: 700; cursor: pointer; }
 @media (min-width: 700px) {
   .composer { border-radius: 24px 24px 0 0; }
 }
+
+/* AI listening feedback */
+.rec-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.fb { background: var(--surface); border: 1.5px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--r-md); padding: 14px 16px; margin-top: 8px; font-size: 16px; }
+.fb p { margin: 0 0 .55em; }
+.fb-head { font: 700 20px var(--font-display); }
+.fb-head b { color: var(--accent); font-size: 28px; }
+.fb-sub { color: var(--muted); font-size: 14px; margin-top: .6em !important; }
+.fb-fix { background: var(--accent-soft); border-radius: var(--r-sm); padding: 8px 10px; }
+.fb details { border: 0; padding: 4px 0 0; }
+.fb summary { font-size: 14px; color: var(--muted); font-weight: 700; }
+.scores { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 0 0 10px; }
+.scores dt { font-size: 13px; color: var(--muted); }
+.scores dd { margin: 2px 0 0; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+.meter { flex: 1; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.meter i { display: block; height: 100%; width: calc(var(--v) * 100%); background: var(--deep); border-radius: inherit; }
+.pw { list-style: none; padding: 0; margin: 0 0 10px; }
+.pw li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pw li:last-child { border-bottom: 0; }
+
+/* Drive reminder + weekly */
+.save-row { border-color: var(--accent); }
+.week { margin: 4px 0 26px; }
+.week .stats { margin-bottom: 12px; }
+.report { margin: 12px 0; }
+.report h4 { margin: 0 0 8px; }
+.progress > h2 { margin-top: 8px; }
+.fb-fold { border: 0; padding: 4px 0 0; }
+.fb-fold > summary { font-weight: 700; color: var(--deep); }

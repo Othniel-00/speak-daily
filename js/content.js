@@ -1,4 +1,5 @@
 // All practice content lives here so the app works fully offline.
+import * as X from './content-extra.js';
 
 export const START_DATE_DEFAULT = '2026-10-13';
 
@@ -361,3 +362,18 @@ export function pick(list, dayIndex, offset = 0) {
   const i = ((dayIndex + offset) % list.length + list.length) % list.length;
   return list[i];
 }
+
+// Join the extra content (version 1.1) onto each list, skipping duplicates.
+function addUnique(list, more, key = (x) => (typeof x === 'string' ? x : JSON.stringify(x))) {
+  const seen = new Set(list.map(key));
+  for (const item of more) { const k = key(item); if (!seen.has(k)) { seen.add(k); list.push(item); } }
+}
+addUnique(TWISTERS, X.MORE_TWISTERS, (x) => x.toLowerCase());
+addUnique(WORDS, X.MORE_WORDS, (x) => x.w.toLowerCase());
+addUnique(GRAMMAR, X.MORE_GRAMMAR, (x) => x.title);
+addUnique(TALK_TOPICS, X.MORE_TALK_TOPICS);
+addUnique(JOURNAL_PROMPTS, X.MORE_JOURNAL_PROMPTS);
+addUnique(SHADOW_LINES, X.MORE_SHADOW_LINES);
+addUnique(READ_PASSAGES, X.MORE_READ_PASSAGES, (x) => x.t);
+addUnique(GREAT_MINDS, X.MORE_GREAT_MINDS, (x) => x.q);
+addUnique(VERSES, X.MORE_VERSES, (x) => x.ref);

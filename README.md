@@ -12,6 +12,10 @@ A daily morning and evening coach for clear speaking, grammar and reading. It is
 - **AI coach:** chat by typing or talking. It has four modes: just talk, correct my writing, role-play (interviews, presentations, selling) and explain grammar. Replies can be read aloud.
 - **Daily reading:** news from Liberia, tech in Africa, world tech, and business; a great mind's quote; a Bible verse (KJV); and "On this day" in history. Reading goal and a streak.
 - **Progress:** streak, a 5-week calendar, quiz score, stories read, all your recordings, and your journal history.
+- **AI listening feedback (v1.1):** after a 1-minute talk, the coach scores clarity, pace, grammar and confidence, counts filler words, and gives one thing to fix tomorrow.
+- **Pronunciation check (v1.1):** record yourself reading the passage or the shadowing sentences; the coach lists unclear words with tips.
+- **Weekly report (v1.1):** this-week stats on the Progress tab and an AI-written report with next week's focus (reminder on Sunday/Monday).
+- **More content (v1.1):** 82 tongue twisters, 201 words, 12 grammar weeks, 100 talk topics, 60 journal prompts, 80 shadowing lines, 30 reading passages, 50 quotes, 51 verses.
 - **Google Drive backup:** progress and recordings are saved to a `Speak Daily` folder in your own Drive.
 - **Offline:** all practice content, recordings and progress live on the phone. The news you last loaded stays readable offline. Only the AI coach and Drive saving need the internet.
 
@@ -25,7 +29,7 @@ A daily morning and evening coach for clear speaking, grammar and reading. It is
 
 | Name | Needed for | Notes |
 |---|---|---|
-| `ANTHROPIC_API_KEY` **or** `GEMINI_API_KEY` | AI coach | Use one. Claude keys: console.anthropic.com. Gemini keys (has a free tier): aistudio.google.com/apikey |
+| `ANTHROPIC_API_KEY` **or** `GEMINI_API_KEY` | AI coach (voice feedback needs Gemini) | Use one. Claude keys: console.anthropic.com. Gemini keys (has a free tier): aistudio.google.com/apikey |
 | `ANTHROPIC_MODEL` / `GEMINI_MODEL` | optional | Defaults: `claude-haiku-5-5` / `gemini-3.8-flash` |
 | `APP_PASSCODE` | protecting your AI credit | Anyone with the link could otherwise use your key. Enter the same passcode in the app's Settings. |
 | `GOOGLE_CLIENT_ID` | Google Drive backup | See below. |
@@ -54,6 +58,10 @@ js/drive.js           Google Drive backup
 js/voice.js           Recording, speech-to-text, text-to-speech
 sw.js                 Offline support (service worker)
 api/chat.js           AI coach (Claude or Gemini)
+api/listen.js         AI listening feedback + pronunciation check (Gemini)
+lib/gemini.js         Gemini helper with automatic backup models
+js/audio.js           Converts recordings to WAV for the AI
+js/content-extra.js   Extra practice content (v1.1)
 api/feed.js           Daily news + On this day
 api/reminders.js      Calendar file with daily alerts
 api/config.js         Public settings for the app

@@ -17,7 +17,7 @@ let status = { state: 'idle', message: '' };
 export function onStatus(fn) { statusListeners.add(fn); fn(status); return () => statusListeners.delete(fn); }
 function setStatus(state, message = '') { status = { state, message }; statusListeners.forEach((f) => f(status)); }
 
-export function configure(id) { clientId = id || null; }
+export function configure(id) { clientId = id || null; prepare(); }
 export function available() { return !!clientId; }
 export function isConnected() { return store.get().drive.connected; }
 
@@ -40,28 +40,58 @@ function loadGis() {
   });
 }
 
+function makeClient() {
+  if (tokenClient || !window.google?.accounts?.oauth2 || !clientId) return tokenClient;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: SCOPE,
+    callback: (r) => {
+      if (r.error) { pending?.rej(new Error(r.error_description || r.error)); }
+      else {
+        localStorage.setItem(TOKEN_KEY, JSON.stringify({ token: r.access_token, exp: Date.now() + (r.expires_in || 3600) * 1000 }));
+        pending?.res(r.access_token);
+      }
+      pending = null;
+    },
+    error_callback: (e) => { pending?.rej(new Error(e.message || 'Sign-in was closed.')); pending = null; },
+  });
+  return tokenClient;
+}
+
+// Load Google sign-in in the background so a later tap can renew access instantly.
+export function prepare() {
+  if (!clientId || !isConnected()) return;
+  loadGis().then(makeClient).catch(() => {});
+}
+
+export function hasAccess() { return !!savedToken(); }
+
+// True when there are changes on this phone that are not in Drive yet.
+export function needsSave() {
+  const s = store.get();
+  return isConnected() && (s.updatedAt || 0) > (s.drive.lastSync || 0) + 2000;
+}
+
+// Renew Drive access from inside a tap, without awaiting first (iPhone only allows
+// sign-in windows that open directly from a tap). Google closes the window by itself
+// because you already said yes once. Then saves.
+export function renewFromTap() {
+  if (!isConnected() || savedToken() || pending || !navigator.onLine) return false;
+  const c = makeClient();
+  if (!c) return false;
+  const p = new Promise((res, rej) => { pending = { res, rej }; });
+  c.requestAccessToken({ prompt: '' });
+  p.then(() => sync({ interactive: false })).catch(() => setStatus('needs-tap', 'Tap "Save to Drive now" to keep saving.'));
+  return true;
+}
+
 // Must be called from a tap (iPhone blocks sign-in pop-ups otherwise).
 export async function requestToken(interactive = true) {
   const t = savedToken();
   if (t) return t;
   if (!clientId) throw new Error('Google Drive is not set up yet. Add GOOGLE_CLIENT_ID in Vercel.');
-  await loadGis();
-  if (!tokenClient) {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: SCOPE,
-      callback: (r) => {
-        if (r.error) { pending?.rej(new Error(r.error_description || r.error)); }
-        else {
-          localStorage.setItem(TOKEN_KEY, JSON.stringify({ token: r.access_token, exp: Date.now() + (r.expires_in || 3600) * 1000 }));
-          pending?.res(r.access_token);
-        }
-        pending = null;
-      },
-      error_callback: (e) => { pending?.rej(new Error(e.message || 'Sign-in was closed.')); pending = null; },
-    });
-  }
   if (!interactive) throw new Error('needs-tap');
+  if (!makeClient()) { await loadGis(); makeClient(); }
   return new Promise((res, rej) => {
     pending = { res, rej };
     tokenClient.requestAccessToken({ prompt: store.get().drive.connected ? '' : 'consent' });
@@ -137,9 +167,27 @@ export async function sync({ interactive = false } = {}) {
     }
     store.update((st) => { st.drive.fileId = fileId; st.drive.connected = true; st.drive.lastSync = Date.now(); }, { silent: true });
     setStatus('ok', 'Saved to Google Drive.');
+    window.dispatchEvent(new CustomEvent('speakdaily:saved'));
+    uploadPending(token);
   } catch (e) {
     if (e.message === 'needs-tap') setStatus('needs-tap', 'Tap "Save to Drive now" to continue saving.');
     else setStatus('error', e.message);
+  }
+}
+
+async function uploadOne(rec, token) {
+  const folderId = await ensureFolder(token);
+  const ext = rec.type.includes('mp4') ? 'm4a' : rec.type.includes('webm') ? 'webm' : 'audio';
+  const r = await gfetch(`${UPLOAD}/files?uploadType=multipart&fields=id`, { method: 'POST', body: multipart({ name: `${rec.title}.${ext}`, parents: [folderId] }, rec.blob) }, token);
+  rec.driveId = (await r.json()).id;
+  await store.recordings.put(rec);
+}
+
+// Upload any recordings that are only on this phone (for example, made while offline).
+async function uploadPending(token) {
+  const all = await store.recordings.all();
+  for (const rec of all.filter((r) => !r.driveId)) {
+    try { await uploadOne(rec, token); } catch { break; }
   }
 }
 
@@ -147,12 +195,7 @@ export async function uploadRecording(rec) {
   if (!isConnected() || !navigator.onLine) return false;
   const token = savedToken();
   if (!token) return false;
-  try {
-    const folderId = await ensureFolder(token);
-    const ext = rec.type.includes('mp4') ? 'm4a' : rec.type.includes('webm') ? 'webm' : 'audio';
-    await gfetch(`${UPLOAD}/files?uploadType=multipart&fields=id`, { method: 'POST', body: multipart({ name: `${rec.title}.${ext}`, parents: [folderId] }, rec.blob) }, token);
-    return true;
-  } catch { return false; }
+  try { await uploadOne(rec, token); return true; } catch { return false; }
 }
 
 export function disconnect() {

@@ -2,6 +2,7 @@ import * as store from './store.js';
 import * as C from './content.js';
 import * as drive from './drive.js';
 import * as voice from './voice.js';
+import { toWavBase64 } from './audio.js';
 
 /* ---------------- helpers ---------------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -112,7 +113,7 @@ function beep() {
 
 /* ---------------- recording ---------------- */
 const rec = { ctl: null, started: 0, raf: null, limit: 60, onDone: null };
-async function toggleRecord({ limit = 60, title, sessionName }) {
+async function toggleRecord({ limit = 60, title, sessionName, kind = 'talk', topic = '', expected = '' }) {
   if (rec.ctl) return finishRecord();
   if (!voice.canRecord()) { toast('Recording is not supported in this browser.'); return; }
   try {
@@ -121,7 +122,7 @@ async function toggleRecord({ limit = 60, title, sessionName }) {
     toast('Allow the microphone: Settings › Safari › Microphone, or tap Allow when asked.');
     return;
   }
-  rec.started = Date.now(); rec.limit = limit; rec.meta = { title, sessionName };
+  rec.started = Date.now(); rec.limit = limit; rec.meta = { title, sessionName, kind, topic, expected };
   document.body.classList.add('recording');
   const loop = () => {
     const ring = $('#voice-ring');
@@ -148,11 +149,12 @@ async function finishRecord() {
   const item = {
     id: `${t.key}-${rec.meta.sessionName}-${Date.now()}`,
     date: t.key, session: rec.meta.sessionName, title: rec.meta.title,
+    kind: rec.meta.kind, topic: rec.meta.topic, expected: rec.meta.expected,
     type: blob.type, blob, duration, created: Date.now(),
   };
   await store.recordings.put(item);
   store.update((s) => { const d = store.day(); d.updatedAt = Date.now(); (d.recordings ||= []).push(item.id); });
-  toast(`Saved a ${duration}-second recording.`);
+  toast(`Saved a ${duration}-second recording. Tap ${rec.meta.kind === 'pronounce' ? '"Check my pronunciation"' : '"Get AI feedback"'} below.`);
   drive.uploadRecording(item).then((ok) => ok && toast('Recording also saved to Google Drive.'));
   render();
 }
@@ -180,7 +182,7 @@ function viewToday() {
       <strong>Put Speak Daily on your home screen</strong>
       <p>In Safari, tap the Share button ${icon('share')}, then choose <b>Add to Home Screen</b>. It then opens like a normal app and works offline.</p>
     </div>` : '';
-  const yFix = (() => { const y = new Date(); y.setDate(y.getDate() - 1); return s.days[store.todayKey(y)]?.fix; })();
+  const yFix = (() => { const y = new Date(); y.setDate(y.getDate() - 1); const yd = s.days[store.todayKey(y)]; return yd?.fix || yd?.aiFix; })();
 
   return `
   <section class="today">
@@ -190,6 +192,18 @@ function viewToday() {
       <p class="sub">Day ${t.dayNo} of your practice${streak ? `. You are on a ${streak}-day streak.` : '. Let’s begin.'}</p>
     </header>
     ${install}
+    ${drive.needsSave() && !drive.hasAccess() ? `
+    <button class="row-card save-row" data-action="drive-sync">
+      ${icon('cloud')}
+      <span><b>Save today's progress to Drive</b><small>Your latest practice is only on this phone. Tap to save it.</small></span>
+      ${icon('chev')}
+    </button>` : ''}
+    ${weeklyDue() ? `
+    <button class="row-card" data-action="tab" data-tab="progress">
+      ${icon('chart')}
+      <span><b>Your weekly report is ready</b><small>See how your week went and get next week's focus.</small></span>
+      ${icon('chev')}
+    </button>` : ''}
     <button class="voice-start" data-action="open-session" data-which="${main}" aria-label="${mainDone === 4 ? 'Review' : 'Start'} ${main} practice">
       ${ringSVG(mainDone / 4)}
       <span class="voice-core">
@@ -252,12 +266,17 @@ function stepBody(which, idx) {
       <div class="btns">
         <button class="btn ghost" data-action="speak" data-text="${esc(t.passage.p)}">${icon('speaker')} Hear it first</button>
         <button class="btn ghost" data-action="tab-close" data-tab="read">${icon('book')} Read a news story instead</button>
-      </div>`;
+      </div>
+      <h4>Check your pronunciation</h4>
+      <p class="hint">Record yourself reading the passage, then tap <b>Check my pronunciation</b>. The coach shows which words were not clear and how to say them.</p>
+      ${recorderBlock('read', `Day ${t.dayNo} reading`, 120, { kind: 'pronounce', expected: t.passage.p })}
+      ${recList(t.key, 'read')}`;
     case 'talk': return `
       <p class="hint">Talk for one minute without stopping. If you get stuck, pause quietly. Don't say "um" or "like".</p>
       <p class="topic">${esc(t.topic)}</p>
-      ${recorderBlock('morning', `Day ${t.dayNo} morning talk`)}
-      ${recList(t.key, 'morning')}`;
+      ${recorderBlock('morning', `Day ${t.dayNo} morning talk`, 60, { kind: 'talk', topic: t.topic })}
+      ${recList(t.key, 'morning')}
+      <p class="hint">After recording, tap <b>Get AI feedback</b>. The coach listens and tells you about your clarity, speed and filler words.</p>`;
     case 'word': {
       const sentences = d.wordSentences || ['', '', ''];
       return `
@@ -311,16 +330,18 @@ function stepBody(which, idx) {
       <ul class="shadow">
         ${t.shadow.map((l) => `<li><button class="say" data-action="speak" data-text="${esc(l)}" aria-label="Play">${icon('play')}</button><span>${esc(l)}</span></li>`).join('')}
       </ul>
-      ${recorderBlock('evening', `Day ${t.dayNo} evening shadowing`, 30)}
+      <p class="hint">Then record yourself saying all three sentences and tap <b>Check my pronunciation</b>.</p>
+      ${recorderBlock('evening', `Day ${t.dayNo} evening shadowing`, 45, { kind: 'pronounce', expected: t.shadow.join(' ') })}
+      ${recList(t.key, 'evening')}
       <p class="hint">For more, open <a href="https://www.youtube.com/@bbclearningenglish/videos" target="_blank" rel="noopener">BBC Learning English</a> and shadow a short clip.</p>`;
   }
   return '';
 }
 
-function recorderBlock(sessionName, title, limit = 60) {
+function recorderBlock(sessionName, title, limit = 60, { kind = 'talk', topic = '', expected = '' } = {}) {
   const recording = !!rec.ctl;
   return `
-  <button id="voice-ring" class="voice-ring ${recording ? 'live' : ''}" data-action="record" data-session="${sessionName}" data-title="${esc(title)}" data-limit="${limit}" aria-label="${recording ? 'Stop recording' : 'Start recording'}">
+  <button id="voice-ring" class="voice-ring ${recording ? 'live' : ''}" data-action="record" data-session="${sessionName}" data-title="${esc(title)}" data-limit="${limit}" data-kind="${kind}" data-topic="${esc(topic)}" data-expected="${esc(expected)}" aria-label="${recording ? 'Stop recording' : 'Start recording'}">
     ${ringSVG(0, 180)}
     <span class="ring-core">${icon(recording ? 'stop' : 'mic')}</span>
     <span class="ring-label">${recording ? 'Tap to stop' : `Tap to record (${limit} s)`}</span>
@@ -330,6 +351,94 @@ function recorderBlock(sessionName, title, limit = 60) {
 function recList(date, sessionName, big = false) {
   return `<div class="recs" data-recs="${date}|${sessionName}" data-big="${big ? 1 : 0}"><p class="muted">Loading recordings…</p></div>`;
 }
+/* ---------------- AI listening feedback ---------------- */
+const analysing = new Set();
+const bar = (n) => `<span class="meter" style="--v:${Math.max(0, Math.min(5, +n || 0)) / 5}" aria-hidden="true"><i></i></span>`;
+
+function feedbackCard(fb) {
+  if (!fb) return '';
+  if (fb.mode === 'pronounce') {
+    const words = (fb.problem_words || []).slice(0, 8);
+    return `<div class="fb">
+      <p class="fb-head"><b>${Math.round(+fb.accuracy || 0)}%</b> clear and correct</p>
+      ${fb.went_well ? `<p><b>Good:</b> ${esc(fb.went_well)}</p>` : ''}
+      ${words.length ? `<p class="fb-sub">Words to practise</p><ul class="pw">${words.map((w) => `
+        <li><button class="say tiny" data-action="speak" data-text="${esc(w.word)}" aria-label="Hear ${esc(w.word)}">${icon('speaker')}</button>
+        <span><b>${esc(w.word)}</b> <small>${esc(w.issue || '')}</small><br>${esc(w.tip || '')}</span></li>`).join('')}</ul>` : '<p>Every word was clear. Well done.</p>'}
+      ${fb.overall_tip ? `<p><b>Next time:</b> ${esc(fb.overall_tip)}</p>` : ''}
+      ${fb.transcript ? `<details><summary>What the coach heard</summary><p>${esc(fb.transcript)}</p></details>` : ''}
+    </div>`;
+  }
+  const sc = fb.scores || {};
+  const fill = fb.filler_words || {};
+  return `<div class="fb">
+    <dl class="scores">
+      <div><dt>Clarity</dt><dd>${bar(sc.clarity)} ${sc.clarity ?? '-'}/5</dd></div>
+      <div><dt>Pace</dt><dd>${bar(sc.pace)} ${sc.pace ?? '-'}/5</dd></div>
+      <div><dt>Grammar</dt><dd>${bar(sc.grammar)} ${sc.grammar ?? '-'}/5</dd></div>
+      <div><dt>Confidence</dt><dd>${bar(sc.confidence)} ${sc.confidence ?? '-'}/5</dd></div>
+    </dl>
+    <p>${fb.words_per_minute ? `About <b>${Math.round(fb.words_per_minute)} words a minute</b>. ` : ''}${esc(fb.pace_note || '')}</p>
+    <p>Filler words: <b>${+fill.count || 0}</b>${(fill.examples || []).length ? ` (${esc(fill.examples.slice(0, 4).join(', '))})` : ''}</p>
+    ${(fb.unclear_words || []).length ? `<p>Hard to hear: ${fb.unclear_words.slice(0, 5).map((w) => `<b>${esc(w)}</b>`).join(', ')}</p>` : ''}
+    ${(fb.grammar_fixes || []).length ? `<ul class="fixes">${fb.grammar_fixes.slice(0, 4).map((g) => `<li><s>${esc(g.said)}</s><span>${esc(g.better)}</span></li>`).join('')}</ul>` : ''}
+    ${fb.went_well ? `<p><b>Good:</b> ${esc(fb.went_well)}</p>` : ''}
+    ${fb.fix_next ? `<p class="fb-fix"><b>Fix tomorrow:</b> ${esc(fb.fix_next)}</p>` : ''}
+    ${fb.encouragement ? `<p class="muted">${esc(fb.encouragement)}</p>` : ''}
+    ${fb.transcript ? `<details><summary>What the coach heard</summary><p>${esc(fb.transcript)}</p></details>` : ''}
+  </div>`;
+}
+
+function recHTML(r, { canDelete = false, preload = 'metadata', fold = false } = {}) {
+  const pron = r.kind === 'pronounce';
+  const busy = analysing.has(r.id);
+  const label = pron ? 'Check my pronunciation' : 'Get AI feedback';
+  return `<div class="rec">
+    <span>${esc(r.title)} <small>${r.duration}s</small></span>
+    <audio controls preload="${preload}" data-rec="${r.id}"></audio>
+    <div class="rec-actions">
+      ${r.feedback ? '' : `<button class="btn small ${busy ? '' : 'primary'}" data-action="rec-feedback" data-id="${r.id}" ${busy ? 'disabled' : ''}>${icon('spark')} ${busy ? 'Listening…' : label}</button>`}
+      ${canDelete ? `<button class="link danger" data-action="del-rec" data-id="${r.id}">Delete</button>` : ''}
+    </div>
+    ${r.feedback && fold ? `<details class="fb-fold"><summary>${r.feedback.mode === 'pronounce' ? `Pronunciation: ${Math.round(+r.feedback.accuracy || 0)}% clear` : `AI feedback: clarity ${r.feedback.scores?.clarity ?? '-'}/5`}</summary>${feedbackCard(r.feedback)}</details>` : feedbackCard(r.feedback)}
+  </div>`;
+}
+
+async function analyse(id) {
+  if (analysing.has(id)) return;
+  if (!navigator.onLine) { toast('You’re offline. Your recording is saved; get feedback when you’re back online.'); return; }
+  const r = await store.recordings.get(id);
+  if (!r) return;
+  analysing.add(id); fillRecLists(); fillAllRecs();
+  try {
+    const { base64 } = await toWavBase64(r.blob);
+    const res = await fetch('/api/listen', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-app-passcode': store.get().settings.passcode || '' },
+      body: JSON.stringify({ audio: base64, mode: r.kind === 'pronounce' ? 'pronounce' : 'talk', topic: r.topic || '', expected: r.expected || '' }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+    r.feedback = { ...j, at: Date.now() };
+    await store.recordings.put(r);
+    const compact = j.mode === 'pronounce'
+      ? { mode: 'pronounce', accuracy: j.accuracy, words: (j.problem_words || []).map((w) => w.word).slice(0, 8), tip: j.overall_tip }
+      : { mode: 'talk', scores: j.scores, wpm: j.words_per_minute, fillers: j.filler_words?.count, fix: j.fix_next };
+    store.update((s) => {
+      const d = s.days[r.date] || store.day(r.date);
+      (d.feedback ||= {})[r.id] = compact;
+      if (compact.mode === 'talk' && compact.fix) d.aiFix = compact.fix;
+      d.updatedAt = Date.now();
+    }, { silent: true });
+    drive.scheduleSync();
+    toast('Feedback ready.');
+  } catch (e) {
+    toast(e.message.length > 140 ? e.message.slice(0, 140) + '…' : e.message);
+  } finally {
+    analysing.delete(id); fillRecLists(); fillAllRecs();
+  }
+}
+
 async function fillRecLists() {
   const boxes = document.querySelectorAll('[data-recs]');
   if (!boxes.length) return;
@@ -341,7 +450,7 @@ async function fillRecLists() {
       box.innerHTML = `<p class="muted">${box.dataset.big === '1' ? 'No morning recording today. You can record one now in the morning practice, or skip this step.' : 'No recording yet.'}</p>`;
       return;
     }
-    box.innerHTML = list.map((r) => `<div class="rec"><span>${esc(r.title)} <small>${r.duration}s</small></span><audio controls preload="metadata" data-rec="${r.id}"></audio></div>`).join('');
+    box.innerHTML = list.map((r) => recHTML(r)).join('');
     box.querySelectorAll('audio').forEach((a) => {
       const r = list.find((x) => x.id === a.dataset.rec);
       a.src = URL.createObjectURL(r.blob);
@@ -543,6 +652,93 @@ async function runChat(spoken) {
 }
 function scrollThread() { requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })); }
 
+/* ---------------- Weekly report ---------------- */
+function weekStats() {
+  const s = store.get();
+  const out = { days: 0, sessions: 0, minutes: 0, quiz: [0, 0], reads: 0, words: [], fixes: [], clarity: [], pace: [], fillers: 0, talks: 0, accuracy: [], journals: 0 };
+  for (let i = 6; i >= 0; i--) {
+    const dt = new Date(); dt.setDate(dt.getDate() - i);
+    const k = store.todayKey(dt); const d = s.days[k];
+    if (!d) continue;
+    const m = store.sessionDone(d, 'morning'); const e = store.sessionDone(d, 'evening');
+    if (m || e) out.days++;
+    out.sessions += (m ? 1 : 0) + (e ? 1 : 0);
+    out.minutes += d.minutes || 0;
+    if (d.quiz) { out.quiz[0] += d.quiz.score; out.quiz[1] += d.quiz.total; }
+    out.reads += (d.reads || []).length;
+    if (d.morning?.done?.[3]) out.words.push(C.pick(C.WORDS, store.dayIndex(k)).w);
+    if (d.fix) out.fixes.push(d.fix);
+    if ((d.journal || '').trim().length > 20) out.journals++;
+    for (const f of Object.values(d.feedback || {})) {
+      if (f.mode === 'talk') {
+        out.talks++;
+        if (f.scores?.clarity) out.clarity.push(+f.scores.clarity);
+        if (f.scores?.pace) out.pace.push(+f.scores.pace);
+        out.fillers += +f.fillers || 0;
+      } else if (f.accuracy != null) out.accuracy.push(+f.accuracy);
+    }
+  }
+  return out;
+}
+const avg = (a) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : null);
+
+function latestReport() {
+  const r = store.get().reports || [];
+  return r[r.length - 1] || null;
+}
+function weeklyDue() {
+  const dow = new Date().getDay(); // 0 Sunday, 1 Monday
+  if (dow !== 0 && dow !== 1) return false;
+  const last = latestReport();
+  if (last && Date.now() - last.at < 5 * 86400000) return false;
+  return weekStats().days > 0;
+}
+
+function weekText(w) {
+  return [
+    `Days practised: ${w.days} of 7. Sessions finished: ${w.sessions} of 14. Minutes: ${w.minutes}.`,
+    `Grammar quiz: ${w.quiz[1] ? `${w.quiz[0]} of ${w.quiz[1]} right` : 'not taken'}. Journal entries: ${w.journals}. News stories read: ${w.reads}.`,
+    `New words learned: ${w.words.join(', ') || 'none'}.`,
+    `Things he chose to fix after listening: ${w.fixes.join('; ') || 'none'}.`,
+    `AI-checked talks: ${w.talks}. Average clarity ${avg(w.clarity) ?? '-'} of 5, average pace ${avg(w.pace) ?? '-'} of 5, filler words in total ${w.fillers}.`,
+    `Pronunciation checks: ${w.accuracy.length}, average ${avg(w.accuracy) ?? '-'}% clear.`,
+    `This week's grammar topic: ${today().grammar.title}.`,
+  ].join('\n');
+}
+
+let reportBusy = false;
+async function makeReport() {
+  if (reportBusy) return;
+  if (!navigator.onLine) { toast('You’re offline. The weekly report needs the internet.'); return; }
+  reportBusy = true; render();
+  try {
+    const text = await askCoach([{ role: 'user', content: `Here are my practice numbers for the last 7 days:\n${weekText(weekStats())}` }], 'weekly');
+    store.update((s) => { (s.reports ||= []).push({ at: Date.now(), date: store.todayKey(), text }); s.reports = s.reports.slice(-12); });
+    drive.scheduleSync();
+  } catch (e) { toast(e.message); }
+  reportBusy = false; render();
+}
+
+function viewWeek() {
+  const w = weekStats();
+  const last = latestReport();
+  const fresh = last && Date.now() - last.at < 6 * 86400000;
+  return `
+  <section class="week">
+    <h2>This week</h2>
+    <dl class="stats">
+      <div><dt>Days practised</dt><dd>${w.days}/7</dd></div>
+      <div><dt>Minutes</dt><dd>${w.minutes}</dd></div>
+      <div><dt>Clarity (AI)</dt><dd>${avg(w.clarity) != null ? `${avg(w.clarity)}/5` : '–'}</dd></div>
+      <div><dt>Pronunciation</dt><dd>${avg(w.accuracy) != null ? `${Math.round(avg(w.accuracy))}%` : '–'}</dd></div>
+    </dl>
+    ${w.words.length ? `<p class="hint">Words learned: <b>${w.words.map(esc).join(', ')}</b></p>` : ''}
+    ${fresh ? `<div class="feedback report"><h4>Weekly report, ${new Date(last.date + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</h4>${md(last.text)}
+      <button class="btn ghost small" data-action="speak" data-text="${esc(last.text)}">${icon('speaker')} Read it to me</button></div>` : ''}
+    <button class="btn ${fresh ? 'ghost' : 'primary'} block" data-action="weekly-report" ${reportBusy ? 'disabled' : ''}>${icon('spark')} ${reportBusy ? 'Writing your report…' : fresh ? 'Write a new report' : 'Write my weekly report'}</button>
+  </section>`;
+}
+
 /* ---------------- Progress tab ---------------- */
 function viewProgress() {
   const s = store.get();
@@ -566,6 +762,8 @@ function viewProgress() {
       <span class="n">${store.streak()}</span>
       <span class="l">day streak<small>Practise once a day to keep it going.</small></span>
     </div>
+    ${viewWeek()}
+    <h2>All time</h2>
     <dl class="stats">
       <div><dt>Days practised</dt><dd>${practised}</dd></div>
       <div><dt>Sessions finished</dt><dd>${sessions}</dd></div>
@@ -595,10 +793,7 @@ async function fillAllRecs() {
   const box = $('#all-recs'); if (!box) return;
   const all = (await store.recordings.all()).sort((a, b) => b.created - a.created);
   if (!all.length) { box.innerHTML = '<p class="muted">No recordings yet. Record your first one-minute talk in the morning practice.</p>'; return; }
-  box.innerHTML = all.map((r) => `
-    <div class="rec"><span>${esc(r.title)} <small>${r.duration}s</small></span>
-    <audio controls preload="none" data-rec="${r.id}"></audio>
-    <button class="link danger" data-action="del-rec" data-id="${r.id}">Delete</button></div>`).join('');
+  box.innerHTML = all.map((r) => recHTML(r, { canDelete: true, preload: 'none', fold: true })).join('');
   box.querySelectorAll('audio').forEach((a) => { const r = all.find((x) => x.id === a.dataset.rec); a.src = URL.createObjectURL(r.blob); });
 }
 
@@ -654,7 +849,7 @@ function viewSettings() {
         <p class="hint">Works offline. Export saves your progress as a file; Import brings it back.</p>
         <div class="btns"><button class="btn ghost" data-action="export">Export</button><label class="btn ghost">Import<input type="file" accept="application/json" data-action="import" hidden></label></div>
       </section>
-      <p class="muted center">Speak Daily 1.0</p>
+      <p class="muted center">Speak Daily 1.1</p>
     </div>
   </div>`;
 }
@@ -696,6 +891,7 @@ document.addEventListener('click', async (e) => {
     case 'goto': { const n = +el.dataset.step; if (n >= 0 && n < 4) { if (rec.ctl) await finishRecord(); session.step = n; render(); $('.sheet-body')?.scrollTo(0, 0); } break; }
     case 'complete-step': {
       const { which, step } = session;
+      if (step === 3) drive.renewFromTap();
       const wasDone = store.day()[which].done[step];
       store.update((s) => { const d = store.day(); d[which].done[step] = true; d.updatedAt = Date.now(); if (!wasDone) d.minutes = (d.minutes || 0) + STEPS[which][step].mins; });
       if (step < 3) { session.step++; render(); $('.sheet-body')?.scrollTo(0, 0); }
@@ -709,7 +905,7 @@ document.addEventListener('click', async (e) => {
     }
     case 'timer': toggleTimer(); break;
     case 'speak': voice.speak(el.dataset.text, { rate: 0.9 }); break;
-    case 'record': await toggleRecord({ limit: +el.dataset.limit, title: el.dataset.title, sessionName: el.dataset.session }); render(); break;
+    case 'record': await toggleRecord({ limit: +el.dataset.limit, title: el.dataset.title, sessionName: el.dataset.session, kind: el.dataset.kind, topic: el.dataset.topic, expected: el.dataset.expected }); render(); break;
     case 'fix': store.update((s) => { const d = store.day(); d.fix = el.dataset.v; d.updatedAt = Date.now(); }); drive.scheduleSync(); break;
     case 'quiz': {
       const qi = +el.dataset.q; const oi = +el.dataset.o;
@@ -763,6 +959,8 @@ document.addEventListener('click', async (e) => {
       const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `speak-daily-backup-${store.todayKey()}.json`; link.click();
       break;
     }
+    case 'weekly-report': makeReport(); break;
+    case 'rec-feedback': analyse(el.dataset.id); break;
     case 'del-rec': if (confirm('Delete this recording from this phone?')) { await store.recordings.remove(el.dataset.id); render(); } break;
   }
 });
@@ -818,6 +1016,8 @@ document.addEventListener('keydown', (e) => {
 store.subscribe(() => render());
 drive.onStatus((st) => { driveStatus = st; if (settingsOpen) render(); });
 window.addEventListener('speakdaily:merged', () => render());
+window.addEventListener('speakdaily:saved', () => { if (tab === 'today' || settingsOpen) render(); });
+try { navigator.storage?.persist?.(); } catch { /* optional */ }
 window.addEventListener('online', () => { render(); loadFeed(); });
 window.addEventListener('offline', () => render());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { applyPhase(); render(); } });

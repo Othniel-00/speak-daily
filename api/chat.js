@@ -4,6 +4,8 @@
 //   GEMINI_API_KEY     (optional GEMINI_MODEL)
 //   APP_PASSCODE       (optional, stops strangers from using your AI credit)
 
+import { gemini, checkPasscode } from '../lib/gemini.js';
+
 const BASE = `You are "Coach", a warm, patient English speaking and writing coach inside the Speak Daily app.
 The learner is Othniel, a university student in Liberia who is improving his articulation, grammar and communication.
 Rules:
@@ -18,6 +20,7 @@ const MODES = {
   chat: 'Have a friendly, natural conversation. Gently correct only the most important grammar mistake in each of his messages, in one line at the end, starting with "Tip:".',
   correct: 'He will send sentences or a journal entry. Correct them fully: give the corrected text, then explain each fix in one short line. Finish with one thing he did well.',
   practice: 'Role-play a real-life situation he picks (job interview, class presentation, selling at a market, talking to a customer, asking a lecturer a question). Stay in character, keep each turn short, and after every 4 turns give quick feedback.',
+  weekly: 'He will send his practice numbers for the past 7 days. Write his weekly progress report: start with one warm sentence, then "Wins:" with 2-3 short bullets, "Work on:" with 1-2 short bullets, and "Next week\'s focus:" with ONE specific goal plus a 2-minute daily drill for it. Use his real numbers. Under 170 words. No question at the end.',
   explain: 'Explain grammar or word questions very simply with 2-3 examples, using everyday Liberian life (school, market, church, tech) where it helps.',
 };
 
@@ -39,51 +42,17 @@ async function anthropic(system, messages) {
   return j.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
 }
 
-// If a model is busy (high demand / rate limit) or unavailable, try the next one.
-const GEMINI_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite'];
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function geminiOnce(model, system, messages) {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-      generationConfig: { maxOutputTokens: 800, temperature: 0.7 },
-    }),
+async function geminiChat(system, messages) {
+  return gemini({
+    system,
+    contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+    maxTokens: 900,
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const err = new Error(j?.error?.message || `Gemini error ${r.status}`);
-    err.retryable = [404, 429, 500, 503].includes(r.status);
-    throw err;
-  }
-  const text = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
-  if (!text.trim()) { const err = new Error('The coach returned an empty answer.'); err.retryable = true; throw err; }
-  return text;
-}
-
-async function gemini(system, messages) {
-  const models = [...new Set([process.env.GEMINI_MODEL, ...GEMINI_FALLBACKS].filter(Boolean))];
-  let last;
-  for (let i = 0; i < models.length; i++) {
-    try { return await geminiOnce(models[i], system, messages); }
-    catch (e) {
-      last = e;
-      if (!e.retryable) throw e;
-      if (i === 0) await sleep(600);
-    }
-  }
-  throw new Error(`All AI models are busy right now. Please try again in a minute. (${last?.message || 'unknown error'})`);
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST.' });
-  const pass = process.env.APP_PASSCODE;
-  if (pass && req.headers['x-app-passcode'] !== pass) {
-    return res.status(401).json({ error: 'Wrong or missing passcode. Enter it in Settings.' });
-  }
+  if (!checkPasscode(req, res)) return;
   if (!process.env.ANTHROPIC_API_KEY && !process.env.GEMINI_API_KEY) {
     return res.status(503).json({ error: 'The AI coach is not switched on yet. Add ANTHROPIC_API_KEY or GEMINI_API_KEY in Vercel, then redeploy.' });
   }
@@ -94,7 +63,7 @@ export default async function handler(req, res) {
   while (msgs.length && msgs[0].role !== 'user') msgs.shift();
   const system = `${BASE}\n\nMode: ${MODES[mode] || MODES.chat}${context ? `\n\nToday in his practice: ${String(context).slice(0, 500)}` : ''}`;
   try {
-    const reply = process.env.ANTHROPIC_API_KEY ? await anthropic(system, msgs) : await gemini(system, msgs);
+    const reply = process.env.ANTHROPIC_API_KEY ? await anthropic(system, msgs) : await geminiChat(system, msgs);
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ reply: reply.trim() });
   } catch (e) {

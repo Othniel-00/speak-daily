@@ -17,6 +17,7 @@ function fresh() {
     settings: { morningTime: '04:55', eveningTime: '20:55', passcode: '', speakReplies: true, readGoal: 3 },
     days: {},
     chat: [],
+    reports: [],
     drive: { folderId: null, fileId: null, lastSync: null, connected: false },
   };
 }
@@ -104,6 +105,7 @@ export function merge(local, remote) {
     out.profile = { ...out.profile, ...remote.profile };
   }
   if ((remote.chat?.length || 0) > (out.chat?.length || 0)) out.chat = remote.chat;
+  if ((remote.reports?.length || 0) > (out.reports?.length || 0)) out.reports = remote.reports;
   out.updatedAt = Math.max(local.updatedAt || 0, remote.updatedAt || 0);
   return out;
 }
