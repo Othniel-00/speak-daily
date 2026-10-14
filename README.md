@@ -26,7 +26,7 @@ A daily morning and evening coach for clear speaking, grammar and reading. It is
 | Name | Needed for | Notes |
 |---|---|---|
 | `ANTHROPIC_API_KEY` **or** `GEMINI_API_KEY` | AI coach | Use one. Claude keys: console.anthropic.com. Gemini keys (has a free tier): aistudio.google.com/apikey |
-| `ANTHROPIC_MODEL` / `GEMINI_MODEL` | optional | Defaults: `claude-haiku-5-5` / `gemini-2.5-flash` |
+| `ANTHROPIC_MODEL` / `GEMINI_MODEL` | optional | Defaults: `claude-haiku-5-5` / `gemini-3.8-flash` |
 | `APP_PASSCODE` | protecting your AI credit | Anyone with the link could otherwise use your key. Enter the same passcode in the app's Settings. |
 | `GOOGLE_CLIENT_ID` | Google Drive backup | See below. |
 
