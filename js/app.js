@@ -4,6 +4,7 @@ import * as drive from './drive.js';
 import * as voice from './voice.js';
 import * as L from './learning.js';
 import * as learn from './learn.js';
+import * as db from './dailybrief.js';
 import { toWavBase64 } from './audio.js';
 import { $, esc, fmtTime, icon, ago, toast, md, parseJson, ring } from './ui.js';
 
@@ -18,6 +19,15 @@ let chatMode = 'chat';
 let chatBusy = false;
 
 /* ---------------- daily picks ---------------- */
+// Word of the day: from your Daily Brief word bank when linked, otherwise from the built-in list.
+function wordOf(di) {
+  const w = db.words();
+  if (w.length) {
+    const x = w[di % w.length];
+    return { w: x.term, m: x.meaning, e: x.sentence || `Use "${x.term}" in a sentence about your day.`, from: 'Daily Brief' };
+  }
+  return C.pick(C.WORDS, di);
+}
 function today() {
   const key = store.todayKey();
   const di = store.dayIndex(key);
@@ -27,7 +37,7 @@ function today() {
     key, di, dayNo: di + 1, week, grammar: C.GRAMMAR[week],
     twisters: [C.pick(C.TWISTERS, di * 2), C.pick(C.TWISTERS, di * 2 + 1)],
     topic: C.pick(C.TALK_TOPICS, di),
-    word: C.pick(C.WORDS, di),
+    word: wordOf(di),
     passage: C.pick(C.READ_PASSAGES, di),
     prompt: C.pick(C.JOURNAL_PROMPTS, di),
     shadow: [0, 1, 2].map((k) => C.pick(C.SHADOW_LINES, di * 3 + k)),
@@ -265,7 +275,7 @@ function stepBody(which, idx) {
       <p class="topic">${esc(t.topic)}</p>
       ${recorderBlock('morning', `Day ${t.dayNo} morning talk`, 60, { kind: 'talk', topic: t.topic })}
       ${recList(t.key, 'morning')}
-      <p class="hint">After recording, tap <b>Get AI feedback</b>. The coach listens and tells you about your clarity, speed and filler words.</p>`;
+      <p class="hint">After recording, tap <b>Get AI feedback</b>. The coach listens and tells you about your clarity, speed and filler words. Grammar slips go to your mistakes notebook.</p>`;
     case 'word': {
       const sentences = d.wordSentences || ['', '', ''];
       return `
@@ -273,6 +283,7 @@ function stepBody(which, idx) {
         <p class="word">${esc(t.word.w)} <button class="say" data-action="speak" data-text="${esc(t.word.w)}. ${esc(t.word.e)}" aria-label="Hear it">${icon('speaker')}</button></p>
         <p>${esc(t.word.m)}</p>
         <p class="ex">"${esc(t.word.e)}"</p>
+        ${t.word.from ? `<p class="ex" style="font-style:normal;font-size:14px">From your ${esc(t.word.from)} word bank</p>` : ''}
       </div>
       <p class="hint">Say three sentences with <b>${esc(t.word.w)}</b> out loud. Type them here if you like. Then use the word once today in a real conversation.</p>
       ${[0, 1, 2].map((i) => `<input class="field" data-bind="wordSentence" data-i="${i}" placeholder="Sentence ${i + 1}" value="${esc(sentences[i] || '')}">`).join('')}`;
@@ -620,7 +631,7 @@ function weekStats() {
     out.sessions += (m ? 1 : 0) + (e ? 1 : 0);
     out.minutes += d.minutes || 0;
     if (d.quiz) { out.quiz[0] += d.quiz.score; out.quiz[1] += d.quiz.total; }
-    if (d.morning?.done?.[3]) out.words.push(C.pick(C.WORDS, store.dayIndex(k)).w);
+    if (d.morning?.done?.[3]) out.words.push(wordOf(store.dayIndex(k)).w);
     if (d.fix) out.fixes.push(d.fix);
     if ((d.journal || '').trim().length > 20) out.journals++;
     for (const f of Object.values(d.feedback || {})) {
@@ -855,6 +866,17 @@ function viewSettings() {
       </section>
 
       <section>
+        <h3>Daily Brief</h3>
+        ${db.linked() ? `
+          <p class="status ${db.get().error ? 'error' : 'ok'}">${esc(db.get().error || `Linked · ${db.words().length} words from your Daily Brief word bank`)}</p>
+          <p class="hint">Your word of the day comes from your Daily Brief word bank. Only the words are used; no news comes into Speak Daily. ${db.get().fetchedAt ? `Updated ${ago(db.get().fetchedAt)}.` : ''}</p>
+          <div class="btns"><button class="btn" data-action="db-refresh">Update now</button><button class="btn ghost" data-action="db-off">Unlink</button></div>`
+        : `<p class="hint">Link your Daily Brief word bank: in Daily Brief open Settings, sign in, tap <b>Create my link code</b>, copy it, and paste it here.</p>
+          <label>Daily Brief link code<input class="field" id="db-code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your code"></label>
+          <button class="btn primary block" data-action="db-link">Link Daily Brief</button>`}
+      </section>
+
+      <section>
         <h3>You</h3>
         <label>Your name<input class="field" data-bind="name" value="${esc(s.profile.name)}"></label>
         <label>Practice started on<input class="field" type="date" data-bind="startDate" value="${esc(s.profile.startDate)}"></label>
@@ -978,6 +1000,9 @@ document.addEventListener('click', async (e) => {
     case 'add-reminders': if (!navigator.onLine) { e.preventDefault(); toast('Connect to the internet once to add the reminders.'); } break;
     case 'drive-connect': case 'drive-sync': await drive.sync({ interactive: true }); render(); break;
     case 'drive-off': drive.disconnect(); render(); break;
+    case 'db-link': { const c = $('#db-code')?.value.trim(); if (!c) { toast('Paste your Daily Brief code first.'); break; } await db.setCode(c); toast(db.get().error ? db.get().error : 'Daily Brief linked.'); if (db.get().error) db.disconnect(); render(); break; }
+    case 'db-refresh': await db.refresh(true); toast(db.get().error || 'Updated from Daily Brief.'); render(); break;
+    case 'db-off': if (confirm('Unlink Daily Brief?')) { db.disconnect(); render(); } break;
     case 'export': {
       const s = store.get();
       const blob = new Blob([JSON.stringify({ ...s, settings: { ...s.settings, passcode: '' } }, null, 1)], { type: 'application/json' });
@@ -1065,6 +1090,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ap
   }
   drive.configure(config.googleClientId);
   render();
+  db.refresh().then((changed) => changed && render());
   if (store.get().drive.connected) drive.sync({ interactive: false });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

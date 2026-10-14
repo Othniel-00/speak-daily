@@ -220,7 +220,7 @@ function soundPage(id) {
 function vocabPage() {
   const t = ctx.today(); const c = L.counts('word');
   const bank = L.cards('word').sort((a, b) => (b.added || '').localeCompare(a.added || '') || a.box - b.box);
-  const inBank = !!store.get().srs['word:' + t.word.w.toLowerCase()];
+  const inBank = L.cards('word').some((c) => c.data.w.toLowerCase() === t.word.w.toLowerCase());
   return `
   <section class="learn">
     ${back()}

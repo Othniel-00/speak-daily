@@ -67,7 +67,7 @@ export default async function handler(req, res) {
   if (!msgs.length || msgs[msgs.length - 1].role !== 'user') return res.status(400).json({ error: 'Send a message first.' });
   // Both providers need the conversation to start with the user.
   while (msgs.length && msgs[0].role !== 'user') msgs.shift();
-  const system = `${BASE}\n\nMode: ${MODES[mode] || MODES.chat}${context ? `\n\nToday in his practice: ${String(context).slice(0, 500)}` : ''}`;
+  const system = `${BASE}\n\nMode: ${MODES[mode] || MODES.chat}${context ? `\n\nToday in his practice: ${String(context).slice(0, 1500)}` : ''}`;
   try {
     const reply = process.env.ANTHROPIC_API_KEY ? await anthropic(system, msgs) : await geminiChat(system, msgs, JSON_MODES.has(mode));
     res.setHeader('Cache-Control', 'no-store');
