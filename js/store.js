@@ -18,6 +18,9 @@ function fresh() {
     days: {},
     chat: [],
     reports: [],
+    srs: {},      // mistakes notebook + word bank: spaced-review cards, by id
+    grammar: {},  // Grammar Academy results, by unit number
+    practice: {}, // how often each lesson was practised, e.g. 'comm:prep' -> { count, at }
     drive: { folderId: null, fileId: null, lastSync: null, connected: false },
   };
 }
@@ -30,7 +33,7 @@ function load() {
     if (!raw) return fresh();
     const s = JSON.parse(raw);
     const base = fresh();
-    return { ...base, ...s, profile: { ...base.profile, ...s.profile }, settings: { ...base.settings, ...s.settings }, drive: { ...base.drive, ...s.drive } };
+    return { ...base, ...s, srs: s.srs || {}, grammar: s.grammar || {}, practice: s.practice || {}, profile: { ...base.profile, ...s.profile }, settings: { ...base.settings, ...s.settings }, drive: { ...base.drive, ...s.drive } };
   } catch {
     return fresh();
   }
@@ -103,6 +106,22 @@ export function merge(local, remote) {
   if ((remote.updatedAt || 0) > (local.updatedAt || 0)) {
     out.settings = { ...out.settings, ...remote.settings, passcode: local.settings.passcode || remote.settings?.passcode || '' };
     out.profile = { ...out.profile, ...remote.profile };
+  }
+  // Review cards and grammar results: per item, the most recently changed copy wins.
+  out.srs ||= {};
+  for (const [id, rc] of Object.entries(remote.srs || {})) {
+    const lc = out.srs[id];
+    if (!lc || (rc.updatedAt || 0) > (lc.updatedAt || 0)) out.srs[id] = rc;
+  }
+  out.grammar ||= {};
+  for (const [u, rg] of Object.entries(remote.grammar || {})) {
+    const lg = out.grammar[u];
+    if (!lg || (rg.at || 0) > (lg.at || 0)) out.grammar[u] = { ...rg, best: Math.max(rg.best || 0, lg?.best || 0), mastered: !!(rg.mastered || lg?.mastered) };
+  }
+  out.practice ||= {};
+  for (const [k, rp] of Object.entries(remote.practice || {})) {
+    const lp = out.practice[k];
+    if (!lp || (rp.count || 0) > (lp.count || 0)) out.practice[k] = rp;
   }
   if ((remote.chat?.length || 0) > (out.chat?.length || 0)) out.chat = remote.chat;
   if ((remote.reports?.length || 0) > (out.reports?.length || 0)) out.reports = remote.reports;

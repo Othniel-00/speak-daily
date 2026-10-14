@@ -6,18 +6,19 @@ A daily morning and evening coach for clear speaking, grammar and reading. It is
 
 ## What it does
 
-- **Morning practice (20 min):** mouth warm-up and tongue twisters, read a passage aloud, record a 1-minute talk, learn a new word.
-- **Evening practice (20 min):** listen back to your talk and pick one thing to fix, write a 5–8 sentence journal (the AI coach can correct it), a grammar lesson with a quiz, and shadowing a clear speaker.
-- **Reminders:** one tap adds two daily calendar alerts to your iPhone, at the exact times you choose. They ring even when the app is closed or you are offline.
-- **AI coach:** chat by typing or talking. It has four modes: just talk, correct my writing, role-play (interviews, presentations, selling) and explain grammar. Replies can be read aloud.
-- **Daily lines to say aloud:** a great mind's quote and a Bible verse (KJV) on the Today screen.
-- **Progress:** streak, a 5-week calendar, quiz score, words learned, all your recordings, and your journal history.
-- **AI listening feedback (v1.1):** after a 1-minute talk, the coach scores clarity, pace, grammar and confidence, counts filler words, and gives one thing to fix tomorrow.
-- **Pronunciation check (v1.1):** record yourself reading the passage or the shadowing sentences; the coach lists unclear words with tips.
-- **Weekly report (v1.1):** this-week stats on the Progress tab and an AI-written report with next week's focus (reminder on Sunday/Monday).
-- **More content (v1.1):** 82 tongue twisters, 201 words, 12 grammar weeks, 100 talk topics, 60 journal prompts, 80 shadowing lines, 30 reading passages, 50 quotes, 51 verses.
-- **Google Drive backup:** progress and recordings are saved to a `Speak Daily` folder in your own Drive.
-- **Offline:** all practice content, recordings and progress live on the phone. Only the AI coach and Drive saving need the internet.
+Speak Daily follows one cycle: **Learn → Practise → Get feedback → Fix mistakes → Practise again → Track improvement.**
+
+- **Today:** the morning and evening 20-minute sessions, today's minutes, mistakes due for review, the next grammar unit, the word of the day, and a Bible verse and great-mind quote to say aloud.
+- **Learn (five skills):**
+  - **Grammar Academy:** 15 units in 3 levels (Foundations, Building sentences, Precision). Rule, wrong → right examples, an 8-question quiz (6 right = mastered), and 6 fresh AI questions aimed at your past mistakes.
+  - **Speaking & Fluency:** one-minute talks with AI feedback, conversation role-plays with the coach, shadowing.
+  - **Pronunciation:** six sound drills (th, word endings, -s, v/b, word stress, pausing), read-aloud with an AI pronunciation check, and your own problem words.
+  - **Vocabulary:** word bank with spaced review; the daily word is added automatically.
+  - **Communication:** six patterns (clear answers, short stories, introductions, polite disagreement, guiding a talk, clear emails) with spoken or written practice.
+- **Mistakes notebook:** grammar slips from your talks, journal, writing and conversations, wrong quiz answers, unclear words and new words become review cards. Right answers come back later, wrong ones sooner (spaced review).
+- **Coach:** an AI assistant you can type or talk to, with role-play and a "review my English" button that adds your mistakes to the notebook.
+- **Progress:** five-skill progress, a chart of clarity and pronunciation scores over time, speaking speed and filler words, a level roadmap, weekly AI report, calendar, recordings and journal.
+- **Reminders, Google Drive backup and offline use** as before.
 
 ## Install on iPhone
 
@@ -53,6 +54,10 @@ index.html            App shell (iPhone meta tags, icons)
 css/app.css           Design: dawn palette in the morning, dusk palette in the evening
 js/app.js             Screens, sessions, timer, recorder, coach, progress
 js/content.js         All practice content (works offline)
+js/content-learn.js   Grammar levels, sound drills, communication lessons, role-play scenarios
+js/learning.js        Mistakes notebook, spaced review, mastery and skill progress
+js/learn.js           The Learn tab, grammar quiz and review screens
+js/ui.js              Small shared helpers
 js/store.js           Local storage + recordings (IndexedDB) + merge logic
 js/drive.js           Google Drive backup
 js/voice.js           Recording, speech-to-text, text-to-speech

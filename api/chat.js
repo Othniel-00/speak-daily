@@ -22,7 +22,11 @@ const MODES = {
   practice: 'Role-play a real-life situation he picks (job interview, class presentation, selling at a market, talking to a customer, asking a lecturer a question). Stay in character, keep each turn short, and after every 4 turns give quick feedback.',
   weekly: 'He will send his practice numbers for the past 7 days. Write his weekly progress report: start with one warm sentence, then "Wins:" with 2-3 short bullets, "Work on:" with 1-2 short bullets, and "Next week\'s focus:" with ONE specific goal plus a 2-minute daily drill for it. Use his real numbers. Under 170 words. No question at the end.',
   explain: 'Explain grammar or word questions very simply with 2-3 examples, using everyday Liberian life (school, market, church, tech) where it helps.',
+  journal: 'He will send a piece of his writing (a journal entry, message or email). Correct it. Return ONLY a JSON object: {"corrected": "the full corrected text", "fixes": [{"wrong": "his exact words", "right": "the corrected words", "why": "one short reason"}], "good": "one thing he did well", "tip": "one tip for his next piece of writing"}. List at most 8 fixes, the most important first. If there are no mistakes, return an empty fixes list.',
+  review: 'He will send his side of a practice conversation. Review only HIS English. Return ONLY a JSON object: {"summary": "two sentences on how he communicated", "fixes": [{"wrong": "his exact words", "right": "a better way to say it", "why": "one short reason"}], "strengths": ["up to 3 short points"], "next": "one specific thing to practise next"}. List at most 6 fixes, the most useful first.',
+  drill: 'Write extra practice questions for the grammar topic he names, aimed at the mistakes he lists. Return ONLY a JSON object: {"questions": [{"q": "sentence with ___ for the gap", "o": ["option", "option", "option"], "a": index of the correct option (0-2), "why": "one short reason"}]}. Write exactly 6 new questions, with everyday Liberian contexts (school, market, church, tech). Exactly one option must be correct.',
 };
+const JSON_MODES = new Set(['journal', 'review', 'drill']);
 
 function clean(messages) {
   return (Array.isArray(messages) ? messages : [])
@@ -35,18 +39,20 @@ async function anthropic(system, messages) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5', max_tokens: 600, system, messages }),
+    body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5', max_tokens: 1200, system, messages }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(j?.error?.message || `Claude error ${r.status}`);
   return j.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
 }
 
-async function geminiChat(system, messages) {
+async function geminiChat(system, messages, json = false) {
   return gemini({
     system,
     contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-    maxTokens: 900,
+    maxTokens: json ? 1400 : 900,
+    json,
+    temperature: json ? 0.4 : 0.7,
   });
 }
 
@@ -63,7 +69,7 @@ export default async function handler(req, res) {
   while (msgs.length && msgs[0].role !== 'user') msgs.shift();
   const system = `${BASE}\n\nMode: ${MODES[mode] || MODES.chat}${context ? `\n\nToday in his practice: ${String(context).slice(0, 500)}` : ''}`;
   try {
-    const reply = process.env.ANTHROPIC_API_KEY ? await anthropic(system, msgs) : await geminiChat(system, msgs);
+    const reply = process.env.ANTHROPIC_API_KEY ? await anthropic(system, msgs) : await geminiChat(system, msgs, JSON_MODES.has(mode));
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ reply: reply.trim() });
   } catch (e) {

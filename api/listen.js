@@ -17,7 +17,7 @@ Return ONLY a JSON object with exactly these keys:
   "pace_note": "short note, e.g. a little fast / good speed / too slow",
   "filler_words": { "count": number, "examples": ["um", "like"] },
   "unclear_words": ["words that were hard to understand"],
-  "grammar_fixes": [ { "said": "what he said", "better": "the correct way" } ],
+  "grammar_fixes": [ { "said": "what he said", "better": "the correct way", "why": "one short reason" } ],
   "went_well": "one sentence",
   "fix_next": "ONE specific, practical thing to fix tomorrow (one sentence)",
   "encouragement": "one short warm sentence"

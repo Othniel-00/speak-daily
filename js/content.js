@@ -1,5 +1,6 @@
 // All practice content lives here so the app works fully offline.
 import * as X from './content-extra.js';
+import { EXTRA_GRAMMAR } from './content-learn.js';
 
 export const START_DATE_DEFAULT = '2026-10-13';
 
@@ -371,6 +372,7 @@ function addUnique(list, more, key = (x) => (typeof x === 'string' ? x : JSON.st
 addUnique(TWISTERS, X.MORE_TWISTERS, (x) => x.toLowerCase());
 addUnique(WORDS, X.MORE_WORDS, (x) => x.w.toLowerCase());
 addUnique(GRAMMAR, X.MORE_GRAMMAR, (x) => x.title);
+addUnique(GRAMMAR, EXTRA_GRAMMAR, (x) => x.title);
 addUnique(TALK_TOPICS, X.MORE_TALK_TOPICS);
 addUnique(JOURNAL_PROMPTS, X.MORE_JOURNAL_PROMPTS);
 addUnique(SHADOW_LINES, X.MORE_SHADOW_LINES);

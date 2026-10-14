@@ -1,8 +1,8 @@
 {
   "name": "speak-daily",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "Daily morning and evening speaking, grammar and reading coach. Installable iPhone web app that works offline.",
+  "description": "Daily English coach for grammar, speaking, pronunciation, vocabulary and communication. Installable iPhone web app that works offline.",
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {

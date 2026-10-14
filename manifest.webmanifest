@@ -1,14 +1,14 @@
 {
   "name": "Speak Daily",
   "short_name": "Speak Daily",
-  "description": "Daily morning and evening speaking, grammar and reading coach.",
+  "description": "Your daily English coach: grammar, speaking, pronunciation, vocabulary and communication.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#E7F0EC",
-  "theme_color": "#2F6F5E",
+  "background_color": "#EEF1F8",
+  "theme_color": "#2D5BE3",
   "categories": [
     "education",
     "productivity"

@@ -4,6 +4,7 @@ const VERSION = 'speakdaily-v1.2.0';
 const SHELL = [
   '/', '/index.html', '/css/app.css', '/manifest.webmanifest',
   '/js/app.js', '/js/store.js', '/js/content.js', '/js/drive.js', '/js/voice.js', '/js/audio.js', '/js/content-extra.js',
+  '/js/content-learn.js', '/js/learning.js', '/js/learn.js', '/js/ui.js',
   '/icons/icon-192.png', '/icons/icon.svg', '/icons/apple-touch-icon.png',
 ];
 

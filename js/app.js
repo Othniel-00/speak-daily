@@ -2,27 +2,14 @@ import * as store from './store.js';
 import * as C from './content.js';
 import * as drive from './drive.js';
 import * as voice from './voice.js';
+import * as L from './learning.js';
+import * as learn from './learn.js';
 import { toWavBase64 } from './audio.js';
+import { $, esc, fmtTime, icon, ago, toast, md, parseJson, ring } from './ui.js';
 
 /* ---------------- helpers ---------------- */
-const $ = (s, el = document) => el.querySelector(s);
-const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmtTime = (sec) => `${Math.floor(sec / 60)}:${String(Math.max(0, sec % 60)).padStart(2, '0')}`;
 const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const ago = (d) => {
-  const m = Math.round((Date.now() - new Date(d).getTime()) / 60000);
-  if (!isFinite(m)) return '';
-  if (m < 60) return `${Math.max(1, m)} min ago`;
-  if (m < 1440) return `${Math.round(m / 60)} h ago`;
-  return `${Math.round(m / 1440)} d ago`;
-};
-const toast = (msg) => {
-  const t = $('#toast');
-  t.textContent = msg; t.hidden = false; t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => { t.classList.remove('show'); setTimeout(() => (t.hidden = true), 300); }, 2600);
-};
-const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 let config = { googleClientId: null, ai: null, passcodeRequired: false };
 let tab = 'today';
@@ -34,7 +21,8 @@ let chatBusy = false;
 function today() {
   const key = store.todayKey();
   const di = store.dayIndex(key);
-  const week = Math.floor(di / 7) % C.GRAMMAR.length;
+  // The daily grammar unit is the next unit of the Grammar Academy, fixed for the day once used.
+  const week = store.get().days[key]?.unit ?? L.nextUnit();
   return {
     key, di, dayNo: di + 1, week, grammar: C.GRAMMAR[week],
     twisters: [C.pick(C.TWISTERS, di * 2), C.pick(C.TWISTERS, di * 2 + 1)],
@@ -55,7 +43,7 @@ function phase() {
 function applyPhase() {
   const p = phase();
   document.documentElement.dataset.phase = p;
-  $('meta[name="theme-color"]').setAttribute('content', p === 'morning' ? '#E7F0EC' : '#141C33');
+  $('meta[name="theme-color"]').setAttribute('content', '#EEF1F8');
 }
 
 /* ---------------- steps ---------------- */
@@ -183,13 +171,24 @@ function viewToday() {
       <p>In Safari, tap the Share button ${icon('share')}, then choose <b>Add to Home Screen</b>. It then opens like a normal app and works offline.</p>
     </div>` : '';
   const yFix = (() => { const y = new Date(); y.setDate(y.getDate() - 1); const yd = s.days[store.todayKey(y)]; return yd?.fix || yd?.aiFix; })();
-
+  const rc = L.counts(); const next = L.nextUnit(); const lvl = L.currentLevel();
+  const weekMin = weekStats().minutes;
+  const sessionCard = (w, big) => {
+    const n = doneCount(w);
+    return `<button class="${big ? 'session-card' : 'session-card soft'}" data-action="open-session" data-which="${w}">
+      <span class="sc-top"><span class="pill ${big ? 'light' : ''}">${n === 4 ? 'Done' : n ? 'In progress' : `${w === 'morning' ? 'Morning' : 'Evening'} · 20 min`}</span>${icon(w === 'morning' ? 'sun' : 'moon')}</span>
+      <b>${w === 'morning' ? 'Warm up, read and talk' : 'Listen, write and fix'}</b>
+      <small>${w === 'morning' ? 'Morning' : 'Evening'} practice · ${n} of 4 steps</small>
+      <span class="sc-bar"><i style="width:${n * 25}%"></i></span>
+      <span class="go">${icon('arrow')}</span>
+    </button>`;
+  };
   return `
   <section class="today">
     <header class="hello">
       <p class="date">${esc(dateStr)}</p>
-      <h1>${hello}, ${esc(s.profile.name)}.</h1>
-      <p class="sub">Day ${t.dayNo} of your practice${streak ? `. You are on a ${streak}-day streak.` : '. Let’s begin.'}</p>
+      <div class="hello-row"><h1>${hello}, ${esc(s.profile.name)}.</h1></div>
+      <p class="sub"><span class="pill">Day ${t.dayNo}</span> ${streak ? `${icon('flame')} ${streak}-day streak` : 'Let’s begin.'}</p>
     </header>
     ${install}
     ${drive.needsSave() && !drive.hasAccess() ? `
@@ -198,50 +197,41 @@ function viewToday() {
       <span><b>Save today's progress to Drive</b><small>Your latest practice is only on this phone. Tap to save it.</small></span>
       ${icon('chev')}
     </button>` : ''}
+    <div class="tiles two">
+      <div class="tile blue">${icon('clock')}<b>${d?.minutes || 0}<small> min</small></b><span>Practised today<br><small>${weekMin} min this week</small></span></div>
+      <div class="tile">${icon('check')}<b>${rc.mastered}<small> / ${rc.total}</small></b><span>Mistakes fixed<br><small>${rc.due} to review today</small></span></div>
+    </div>
+    ${sessionCard(main, true)}
+    ${yFix && main === 'morning' ? `<p class="focus">${icon('target')} Today, fix this: <b>${esc(yFix)}</b></p>` : ''}
+    ${learn.reviewCard(rc.due)}
+    ${sessionCard(other, false)}
     ${weeklyDue() ? `
     <button class="row-card" data-action="tab" data-tab="progress">
       ${icon('chart')}
       <span><b>Your weekly report is ready</b><small>See how your week went and get next week's focus.</small></span>
       ${icon('chev')}
     </button>` : ''}
-    <button class="voice-start" data-action="open-session" data-which="${main}" aria-label="${mainDone === 4 ? 'Review' : 'Start'} ${main} practice">
-      ${ringSVG(mainDone / 4)}
-      <span class="voice-core">
-        ${icon(main === 'morning' ? 'sun' : 'moon')}
-        <span class="vs-title">${mainDone === 4 ? 'Done for this ' + (main === 'morning' ? 'morning' : 'evening') : mainDone ? 'Continue' : 'Start'}</span>
-        <span class="vs-sub">${main === 'morning' ? 'Morning' : 'Evening'} practice, ${mainDone}/4 steps</span>
-      </span>
-    </button>
-    ${yFix && main === 'morning' ? `<p class="focus">Today, fix this: <b>${esc(yFix)}</b></p>` : ''}
-
-    <button class="row-card" data-action="open-session" data-which="${other}">
-      ${icon(other === 'morning' ? 'sun' : 'moon')}
-      <span><b>${other === 'morning' ? 'Morning' : 'Evening'} practice</b><small>${doneCount(other)}/4 steps done today</small></span>
-      ${icon('chev')}
-    </button>
-
+    <h2 class="sec">Keep learning</h2>
     <div class="pair">
-      <article class="mini">
-        <h3>This week</h3>
-        <p><b>${esc(t.grammar.title)}</b></p>
-        <p class="ex"><s>${esc(t.grammar.examples[0][0])}</s><br>${esc(t.grammar.examples[0][1])}</p>
-      </article>
-      <article class="mini">
-        <h3>New word</h3>
-        <p><b>${esc(t.word.w)}</b></p>
-        <p>${esc(t.word.m)}</p>
-      </article>
+      <button class="mini" data-action="go-unit" data-u="${next}">
+        <span class="eyebrow">Grammar · Level ${lvl.id}</span>
+        <b>${esc(C.GRAMMAR[next].title)}</b>
+        <span class="ex"><s>${esc(C.GRAMMAR[next].examples[0][0])}</s><br>${esc(C.GRAMMAR[next].examples[0][1])}</span>
+      </button>
+      <button class="mini" data-action="go-pillar" data-p="vocabulary">
+        <span class="eyebrow">Word of the day</span>
+        <b>${esc(t.word.w)}</b>
+        <span>${esc(t.word.m)}</span>
+      </button>
     </div>
-
-    <blockquote class="verse">
+    <h2 class="sec">Say it aloud</h2>
+    <article class="say-card verse">
       <p>${esc(t.verse.t)}</p>
-      <footer>${esc(t.verse.ref)} (KJV)</footer>
-    </blockquote>
-
-    <article class="mind">
+      <footer><span>${esc(t.verse.ref)} (KJV)</span><button class="btn small light" data-action="speak" data-text="${esc(t.verse.t)}">${icon('speaker')} Hear it, then say it</button></footer>
+    </article>
+    <article class="say-card mind">
       <p class="q">"${esc(t.mind.q)}"</p>
-      <p class="who"><b>${esc(t.mind.n)}</b><br><small>${esc(t.mind.r)}</small></p>
-      <button class="btn ghost small" data-action="speak" data-text="${esc(t.mind.q)} ${esc(t.mind.n)}.">${icon('speaker')} Hear it, then say it</button>
+      <footer><span><b>${esc(t.mind.n)}</b><br><small>${esc(t.mind.r)}</small></span><button class="btn small light" data-action="speak" data-text="${esc(t.mind.q)} ${esc(t.mind.n)}.">${icon('speaker')} Hear it, then say it</button></footer>
     </article>
   </section>`;
 }
@@ -304,11 +294,12 @@ function stepBody(which, idx) {
       <textarea class="field journal" data-bind="journal" rows="8" placeholder="Today, I…">${esc(d.journal || '')}</textarea>
       <p class="count" id="jcount">${sents} sentences, ${words} words</p>
       <button class="btn" data-action="journal-check" ${chatBusy ? 'disabled' : ''}>${icon('spark')} Ask Coach to correct it</button>
-      ${d.journalFeedback ? `<div class="feedback"><h4>Coach's corrections</h4>${md(d.journalFeedback)}<button class="btn ghost small" data-action="speak" data-text="${esc(d.journalFeedback)}">${icon('speaker')} Read it to me</button></div>` : ''}`;
+      ${d.journalFeedback ? learn.writingFeedback(d.journalFeedback) : ''}`;
     }
     case 'grammar': {
       const g = t.grammar; const answers = d.quizAnswers || {};
       return `
+      <p class="eyebrow">Grammar Academy · Level ${L.levelOf(t.week).id}</p>
       <h3 class="g-title">${esc(g.title)}</h3>
       <p>${esc(g.rule)}</p>
       <ul class="fixes">${g.examples.map(([a, b]) => `<li><s>${esc(a)}</s><span>${esc(b)}</span></li>`).join('')}</ul>
@@ -322,7 +313,8 @@ function stepBody(which, idx) {
             return `<button class="opt ${cls}" data-action="quiz" data-q="${qi}" data-o="${oi}" ${answered ? 'disabled' : ''}>${esc(o)}</button>`;
           }).join('')}
         </fieldset>`).join('')}
-      ${d.quiz ? `<p class="score">You got ${d.quiz.score} of ${d.quiz.total} right.</p>` : ''}`;
+      ${d.quiz ? `<p class="score">You got ${d.quiz.score} of ${d.quiz.total} right.</p>` : ''}
+      <button class="link" data-action="go-unit" data-u="${t.week}">Open the full lesson and 8-question quiz</button>`;
     }
     case 'shadow': return `
       <p class="hint">Play each sentence, pause, then say it back with the same speed and tone. This is called shadowing.</p>
@@ -423,14 +415,16 @@ async function analyse(id) {
     const compact = j.mode === 'pronounce'
       ? { mode: 'pronounce', accuracy: j.accuracy, words: (j.problem_words || []).map((w) => w.word).slice(0, 8), tip: j.overall_tip }
       : { mode: 'talk', scores: j.scores, wpm: j.words_per_minute, fillers: j.filler_words?.count, fix: j.fix_next };
+    let added = 0;
     store.update((s) => {
       const d = s.days[r.date] || store.day(r.date);
       (d.feedback ||= {})[r.id] = compact;
       if (compact.mode === 'talk' && compact.fix) d.aiFix = compact.fix;
       d.updatedAt = Date.now();
+      added = j.mode === 'pronounce' ? L.fromPronounce(s, j) : L.fromTalk(s, j);
     }, { silent: true });
     drive.scheduleSync();
-    toast('Feedback ready.');
+    toast(added ? `Feedback ready. ${added} ${added === 1 ? 'item' : 'items'} added to your mistakes notebook.` : 'Feedback ready.');
   } catch (e) {
     toast(e.message.length > 140 ? e.message.slice(0, 140) + '…' : e.message);
   } finally {
@@ -487,61 +481,65 @@ function viewSession() {
 }
 
 /* ---------------- Coach tab ---------------- */
-function md(text = '') {
-  // Very small, safe markdown: bold, italics, line breaks, bullet lines.
-  return esc(text)
-    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/(^|\s)\*(\S.+?)\*/g, '$1<i>$2</i>')
-    .split(/\n{2,}/).map((p) => `<p>${p.replace(/\n[-•] /g, '<br>• ').replace(/^[-•] /, '• ').replace(/\n/g, '<br>')}</p>`).join('');
-}
 const MODES = [
   { id: 'chat', label: 'Just talk' },
-  { id: 'correct', label: 'Correct my writing' },
   { id: 'practice', label: 'Role-play' },
+  { id: 'correct', label: 'Correct my writing' },
   { id: 'explain', label: 'Explain grammar' },
 ];
 const STARTERS = {
-  chat: ['Ask me about my day.', 'Let’s talk about tech in Liberia.', 'Give me a question to answer out loud.'],
-  correct: ['Yesterday I go to the market and buyed rice.', 'He don’t know where the class is.', 'Correct my journal from today.'],
+  chat: ['Ask me about my day.', 'Give me a question to answer out loud.', 'Let’s talk about my plans for this week.'],
+  correct: ['Yesterday I go to the market and buyed rice.', 'He don’t know where the class is.', 'Me and my friend was late to class.'],
   practice: ['Practise a job interview with me.', 'I am selling phones. Be my customer.', 'Help me present my midterm project.'],
   explain: ['When do I use "an"?', 'What is the difference between "since" and "for"?', 'How do I ask questions correctly?'],
 };
+let chatSince = 0; // only messages after this time belong to the current conversation
 
 function viewCoach() {
   const s = store.get();
-  const msgs = s.chat;
+  const msgs = s.chat.filter((m) => (m.t || 0) >= chatSince);
   const off = !navigator.onLine;
   const notReady = config.ai === null;
+  const mine = msgs.filter((m) => m.role === 'user').length;
+  const bubble = listening ? 'I’m listening…' : chatBusy ? 'Thinking…' : msgs.length ? (chatMode === 'practice' ? 'Your turn. Tap the mic and answer.' : 'Tap the mic to answer by voice.') : `Hi ${s.profile.name}! Tap the mic and talk to me.`;
   return `
   <section class="coach">
     <header class="page-head row">
       <h1>Coach</h1>
-      <button class="icon-btn ${s.settings.speakReplies ? 'on' : ''}" data-action="toggle-speak" aria-pressed="${s.settings.speakReplies}" aria-label="Read replies aloud">${icon(s.settings.speakReplies ? 'speaker' : 'mute')}</button>
+      <button class="icon-btn round ${s.settings.speakReplies ? 'on' : ''}" data-action="toggle-speak" aria-pressed="${s.settings.speakReplies}" aria-label="Read replies aloud">${icon(s.settings.speakReplies ? 'speaker' : 'mute')}</button>
     </header>
+    <div class="ai-hero ${msgs.length ? 'compact' : ''} ${listening ? 'live' : ''} ${chatBusy ? 'busy' : ''}">
+      <div class="orb" aria-hidden="true"><i></i><i></i><i></i></div>
+      <p class="a-bubble" aria-live="polite">${esc(bubble)}</p>
+      <div class="a-row">
+        <button class="a-side" data-action="new-chat" aria-label="New conversation">${icon('plus')}</button>
+        <button class="a-mic ${listening ? 'live' : ''}" data-action="listen" aria-label="${listening ? 'Stop listening' : 'Talk to the coach'}">${icon(listening ? 'stop' : 'mic')}</button>
+        <button class="a-side" data-action="review-chat" aria-label="Review my English" ${mine >= 2 && !chatBusy ? '' : 'disabled'}>${icon('spark')}</button>
+      </div>
+    </div>
     <div class="chips modes" role="tablist">
       ${MODES.map((m) => `<button class="chip ${chatMode === m.id ? 'on' : ''}" role="tab" aria-selected="${chatMode === m.id}" data-action="mode" data-mode="${m.id}">${m.label}</button>`).join('')}
     </div>
-    ${off ? '<div class="note">You’re offline. The coach needs the internet. Your practice sessions still work offline.</div>' : ''}
-    ${notReady && !off ? '<div class="note">The AI coach is not switched on yet. Add an AI key in Vercel (see Settings › About the AI coach).</div>' : ''}
+    ${off ? '<div class="note">You’re offline. The coach needs the internet. Your practice still works offline.</div>' : ''}
+    ${notReady && !off ? '<div class="note">The AI coach is not switched on yet. Add an AI key in Vercel (see Settings › AI coach).</div>' : ''}
     <div class="thread" id="thread" aria-live="polite">
-      ${msgs.length ? msgs.map((m, i) => `
-        <div class="msg ${m.role}">
+      ${msgs.length ? msgs.map((m) => `
+        <div class="msg ${m.role} ${m.review ? 'review' : ''}">
           ${m.role === 'assistant' ? md(m.content) : `<p>${esc(m.content)}</p>`}
-          ${m.role === 'assistant' ? `<button class="say tiny" data-action="speak" data-text="${esc(m.content)}" aria-label="Read aloud">${icon('speaker')}</button>` : ''}
-          ${m.error ? `<button class="link" data-action="retry" data-i="${i}">Try again</button>` : ''}
+          ${m.role === 'assistant' && !m.error ? `<button class="say tiny" data-action="speak" data-text="${esc(m.content)}" aria-label="Read aloud">${icon('speaker')}</button>` : ''}
+          ${m.error ? `<button class="link" data-action="retry">Try again</button>` : ''}
         </div>`).join('') : `
         <div class="empty">
-          <p>Talk or type to your coach. Try one of these:</p>
-          ${STARTERS[chatMode].map((x) => `<button class="starter" data-action="starter" data-text="${esc(x)}">${esc(x)}</button>`).join('')}
+          <p class="muted">Try one of these:</p>
+          <div class="chips">${STARTERS[chatMode].map((x) => `<button class="chip starter" data-action="starter" data-text="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+          <p class="muted small">When you have talked for a while, tap ${icon('spark')} to get a review of your English. Your mistakes go to your notebook.</p>
         </div>`}
       ${chatBusy ? '<div class="msg assistant typing"><span></span><span></span><span></span></div>' : ''}
     </div>
     <form class="composer" data-action="send">
-      <button type="button" class="mic ${listening ? 'live' : ''}" data-action="listen" aria-label="${listening ? 'Stop listening' : 'Talk instead of typing'}">${icon('mic')}</button>
-      <textarea id="chat-input" rows="1" placeholder="${listening ? 'Listening…' : 'Message your coach'}" aria-label="Message">${esc(draft)}</textarea>
+      <textarea id="chat-input" rows="1" placeholder="${listening ? 'Listening…' : 'Ask me anything…'}" aria-label="Message">${esc(draft)}</textarea>
       <button type="submit" class="send" aria-label="Send" ${chatBusy ? 'disabled' : ''}>${icon('send')}</button>
     </form>
-    ${msgs.length ? '<button class="link clear" data-action="clear-chat">Clear conversation</button>' : ''}
   </section>`;
 }
 let draft = '';
@@ -564,21 +562,48 @@ async function sendChat(text, { spoken = false } = {}) {
   if (!text || chatBusy) return;
   if (!navigator.onLine) { toast('You’re offline. The coach needs the internet.'); return; }
   draft = '';
-  store.update((s) => { s.chat.push({ role: 'user', content: text, t: Date.now() }); s.chat = s.chat.slice(-60); });
+  store.update((s) => { s.chat.push({ role: 'user', content: text, t: Date.now() }); s.chat = s.chat.slice(-80); });
   await runChat(spoken);
 }
 async function runChat(spoken) {
   chatBusy = true; render(); scrollThread();
   const t = today();
   try {
-    const history = store.get().chat.filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
-    const reply = await askCoach(history, chatMode, `Day ${t.dayNo}. Grammar focus this week: ${t.grammar.title}. Word of the day: ${t.word.w}.`);
+    const history = store.get().chat.filter((m) => !m.error && !m.review && (m.t || 0) >= chatSince).map(({ role, content }) => ({ role, content }));
+    const reply = await askCoach(history, chatMode, `Day ${t.dayNo}. Grammar focus: ${t.grammar.title}. Word of the day: ${t.word.w}.`);
     store.update((s) => s.chat.push({ role: 'assistant', content: reply, t: Date.now() }));
     if (store.get().settings.speakReplies || spoken) voice.speak(reply);
   } catch (e) {
     store.update((s) => s.chat.push({ role: 'assistant', content: e.message, t: Date.now(), error: true }));
   }
   chatBusy = false; render(); scrollThread();
+}
+async function reviewChat() {
+  const mine = store.get().chat.filter((m) => m.role === 'user' && (m.t || 0) >= chatSince).map((m) => m.content);
+  if (mine.length < 2 || chatBusy) return;
+  if (!navigator.onLine) { toast('You’re offline. The review needs the internet.'); return; }
+  chatBusy = true; render(); scrollThread();
+  try {
+    const reply = await askCoach([{ role: 'user', content: `My side of the conversation (${MODES.find((m) => m.id === chatMode)?.label}):\n${mine.map((x) => `- ${x}`).join('\n')}` }], 'review');
+    const j = parseJson(reply);
+    let text = reply; let added = 0;
+    if (j) {
+      text = [`**Review of your English**`, j.summary || '',
+        (j.fixes || []).length ? `**Better ways to say it**\n${j.fixes.map((f) => `- "${f.wrong}" → "${f.right}"${f.why ? ` (${f.why})` : ''}`).join('\n')}` : '**No mistakes found.** Well done.',
+        (j.strengths || []).length ? `**Strengths**\n${j.strengths.map((x) => `- ${x}`).join('\n')}` : '',
+        j.next ? `**Practise next:** ${j.next}` : ''].filter(Boolean).join('\n\n');
+      store.update((s) => { added = L.fromFixes(s, j.fixes, 'chat'); }, { silent: true });
+    }
+    store.update((s) => s.chat.push({ role: 'assistant', content: text, t: Date.now(), review: true }));
+    drive.scheduleSync();
+    if (added) toast(`${added} ${added === 1 ? 'mistake' : 'mistakes'} added to your notebook.`);
+  } catch (e) { toast(e.message); }
+  chatBusy = false; render(); scrollThread();
+}
+function openScenario(x) {
+  session = null; settingsOpen = false; tab = 'coach'; chatMode = 'practice'; chatSince = Date.now();
+  render();
+  sendChat(x.start);
 }
 function scrollThread() { requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })); }
 
@@ -669,15 +694,55 @@ function viewWeek() {
 }
 
 /* ---------------- Progress tab ---------------- */
+// Line chart of AI scores over time: clarity (talks, scaled to %) and pronunciation (% clear). One axis: 0–100%.
+function scoreChart() {
+  const h = L.history().slice(-40);
+  const talk = h.filter((f) => f.mode === 'talk' && f.scores?.clarity).map((f) => ({ date: f.date, v: (+f.scores.clarity / 5) * 100 }));
+  const pron = h.filter((f) => f.mode === 'pronounce' && f.accuracy != null).map((f) => ({ date: f.date, v: +f.accuracy }));
+  if (talk.length + pron.length < 2) return '<p class="hint">After a few AI-checked talks and pronunciation checks, your scores appear here as a line over time.</p>';
+  const W = 340, H = 180, P = { l: 34, r: 12, t: 12, b: 26 };
+  const dates = [...new Set(h.map((f) => f.date))];
+  const xi = (d) => P.l + (dates.length < 2 ? (W - P.l - P.r) / 2 : (dates.indexOf(d) / (dates.length - 1)) * (W - P.l - P.r));
+  const y = (v) => P.t + (1 - v / 100) * (H - P.t - P.b);
+  const series = [
+    { name: 'Clarity', cls: 's1', pts: talk },
+    { name: 'Pronunciation', cls: 's2', pts: pron },
+  ].filter((x) => x.pts.length);
+  const fmt = (d) => new Date(d + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  // Direct labels on the latest point of each line; push them apart if they would overlap.
+  const labels = series.map((x) => ({ x: xi(x.pts.at(-1).date) - 8, y: y(x.pts.at(-1).v) - 9, t: `${x.name} ${Math.round(x.pts.at(-1).v)}%` }));
+  if (labels.length === 2 && Math.abs(labels[0].y - labels[1].y) < 14) { const [hi, lo] = labels[0].y <= labels[1].y ? labels : [labels[1], labels[0]]; lo.y = hi.y + 30; }
+  return `
+  <figure class="chart">
+    <div class="legend-row">${series.map((x) => `<span><i class="sw ${x.cls}"></i>${x.name}</span>`).join('')}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scores over time">
+      ${[0, 50, 100].map((v) => `<line class="grid" x1="${P.l}" x2="${W - P.r}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${P.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}%</text>`).join('')}
+      <text class="tick" x="${P.l}" y="${H - 6}">${fmt(dates[0])}</text>
+      <text class="tick" x="${W - P.r}" y="${H - 6}" text-anchor="end">${fmt(dates.at(-1))}</text>
+      ${series.map((x) => `
+        <polyline class="line ${x.cls}" points="${x.pts.map((p) => `${xi(p.date).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')}"/>
+        ${x.pts.map((p) => `<circle class="pt ${x.cls}" cx="${xi(p.date).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="4.5"><title>${x.name}, ${fmt(p.date)}: ${Math.round(p.v)}%</title></circle>`).join('')}
+`).join('')}
+      ${labels.map((l) => `<text class="dlabel" x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" text-anchor="end">${l.t}</text>`).join('')}
+    </svg>
+    <details class="table-view"><summary>Show the numbers</summary>
+      <table><thead><tr><th>Date</th><th>Check</th><th>Score</th></tr></thead><tbody>
+      ${series.flatMap((x) => x.pts.map((p) => ({ ...p, n: x.name }))).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).map((r) => `<tr><td>${fmt(r.date)}</td><td>${r.n}</td><td>${Math.round(r.v)}%</td></tr>`).join('')}
+      </tbody></table>
+    </details>
+  </figure>`;
+}
+
 function viewProgress() {
   const s = store.get();
   const days = Object.entries(s.days);
   const practised = days.filter(([, d]) => store.sessionDone(d, 'morning') || store.sessionDone(d, 'evening')).length;
-  const sessions = days.reduce((n, [, d]) => n + (store.sessionDone(d, 'morning') ? 1 : 0) + (store.sessionDone(d, 'evening') ? 1 : 0), 0);
-  const quiz = days.reduce((a, [, d]) => (d.quiz ? [a[0] + d.quiz.score, a[1] + d.quiz.total] : a), [0, 0]);
-  const words = days.filter(([, d]) => d.morning?.done?.[3]).length;
+  const totalMin = days.reduce((n, [, d]) => n + (d.minutes || 0), 0);
   const journals = days.filter(([, d]) => (d.journal || '').trim()).sort((a, b) => b[0].localeCompare(a[0]));
-  // last 35 days grid
+  const rc = L.counts(); const pr = L.pillars();
+  const h = L.history().filter((f) => f.mode === 'talk').slice(-5);
+  const wpm = h.filter((f) => f.wpm).map((f) => +f.wpm); const fill = h.map((f) => +f.fillers || 0);
+  const levels = roadmapHTML();
   const cells = [];
   for (let i = 34; i >= 0; i--) {
     const dt = new Date(); dt.setDate(dt.getDate() - i);
@@ -686,20 +751,34 @@ function viewProgress() {
   }
   return `
   <section class="progress">
-    <header class="page-head"><h1>Your progress</h1></header>
-    <div class="streak">
-      <span class="n">${store.streak()}</span>
-      <span class="l">day streak<small>Practise once a day to keep it going.</small></span>
+    <header class="page-head row"><h1>Progress</h1><span class="pill">${icon('flame')} ${store.streak()}-day streak</span></header>
+    <div class="tiles two">
+      <div class="tile blue">${icon('clock')}<b>${totalMin}<small> min</small></b><span>Total practice<br><small>${practised} days</small></span></div>
+      <div class="tile">${icon('check')}<b>${rc.mastered}<small> / ${rc.total}</small></b><span>Mistakes fixed<br><small>in your notebook</small></span></div>
     </div>
+    <section class="card">
+      <h2>Your five skills</h2>
+      <ul class="skills">
+        ${learn.PILLARS.map((x) => `<li><button data-action="go-pillar" data-p="${x.id}">
+          <span class="bubble sm">${icon(x.icon)}</span>
+          <span class="sk"><b>${esc(x.title)}</b><span class="bar"><i style="width:${Math.round(pr[x.id].p * 100)}%"></i></span><small>${esc(pr[x.id].label)}</small></span>
+          <span class="pct">${Math.round(pr[x.id].p * 100)}%</span></button></li>`).join('')}
+      </ul>
+    </section>
+    <section class="card">
+      <h2>Speaking over time</h2>
+      ${scoreChart()}
+      ${h.length ? `<div class="tiles two flat">
+        <div class="tile"><b>${wpm.length ? Math.round(wpm.reduce((a, b) => a + b, 0) / wpm.length) : '–'}</b><span>words a minute<br><small>last ${h.length} talks (aim for 120–150)</small></span></div>
+        <div class="tile"><b>${(fill.reduce((a, b) => a + b, 0) / h.length).toFixed(1)}</b><span>filler words per talk<br><small>"um", "like": aim for 0–2</small></span></div>
+      </div>` : ''}
+    </section>
+    <section class="card">
+      <h2>Your roadmap</h2>
+      <ol class="roadmap">${levels}</ol>
+    </section>
     ${viewWeek()}
-    <h2>All time</h2>
-    <dl class="stats">
-      <div><dt>Days practised</dt><dd>${practised}</dd></div>
-      <div><dt>Sessions finished</dt><dd>${sessions}</dd></div>
-      <div><dt>Quiz score</dt><dd>${quiz[1] ? Math.round((quiz[0] / quiz[1]) * 100) + '%' : 'None yet'}</dd></div>
-      <div><dt>Words learned</dt><dd>${words}</dd></div>
-    </dl>
-    <section class="cal">
+    <section class="cal card">
       <h2>Last 5 weeks</h2>
       <div class="grid" role="img" aria-label="Calendar of finished sessions">
         ${cells.map((c) => `<span class="cell ${c.m ? 'm' : ''} ${c.e ? 'e' : ''} ${c.today ? 'today' : ''}" title="${c.k}"><i></i><i></i></span>`).join('')}
@@ -714,10 +793,19 @@ function viewProgress() {
     <section class="journals">
       <h2>Journal</h2>
       ${journals.length ? journals.slice(0, 14).map(([k, d]) => `
-        <details><summary>${new Date(k + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</summary><p>${esc(d.journal).replace(/\n/g, '<br>')}</p>${d.journalFeedback ? `<div class="feedback">${md(d.journalFeedback)}</div>` : ''}</details>`).join('') : '<p class="muted">Your evening writing will appear here.</p>'}
+        <details><summary>${new Date(k + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</summary><p>${esc(d.journal).replace(/\n/g, '<br>')}</p>${d.journalFeedback ? learn.writingFeedback(d.journalFeedback) : ''}</details>`).join('') : '<p class="muted">Your evening writing will appear here.</p>'}
     </section>
   </section>`;
 }
+function roadmapHTML() {
+  const steps = [...levelsInfo(), { name: 'Confident speaker', goal: 'All three levels mastered, mistakes reviewed, speaking clearly every day.', p: Math.min(1, ...levelsInfo().map((x) => x.p)) }];
+  let cur = steps.findIndex((x) => x.p < 1); if (cur < 0) cur = steps.length - 1;
+  return steps.map((x, i) => `<li class="${x.p >= 1 ? 'done' : i === cur ? 'cur' : ''}">
+    <span class="node">${icon(x.p >= 1 ? 'check' : i === cur ? 'flag' : 'dot')}</span>
+    <span><b>${esc(x.name)}</b><small>${esc(x.goal)}</small>${i === cur && x.p < 1 ? `<span class="bar"><i style="width:${Math.round(x.p * 100)}%"></i></span>` : ''}</span>
+    <span class="pct">${Math.round(x.p * 100)}%</span></li>`).join('');
+}
+function levelsInfo() { return L.LEVELS_LIST.map((Lv) => ({ name: `Level ${Lv.id}: ${Lv.name}`, goal: Lv.goal, p: L.levelProgress(Lv) })); }
 async function fillAllRecs() {
   const box = $('#all-recs'); if (!box) return;
   const all = (await store.recordings.all()).sort((a, b) => b.created - a.created);
@@ -777,7 +865,7 @@ function viewSettings() {
         <p class="hint">Works offline. Export saves your progress as a file; Import brings it back.</p>
         <div class="btns"><button class="btn ghost" data-action="export">Export</button><label class="btn ghost">Import<input type="file" accept="application/json" data-action="import" hidden></label></div>
       </section>
-      <p class="muted center">Speak Daily 1.1</p>
+      <p class="muted center">Speak Daily 1.2</p>
     </div>
   </div>`;
 }
@@ -786,15 +874,18 @@ function viewSettings() {
 function render() {
   applyPhase();
   const main = $('#main');
-  const views = { today: viewToday, coach: viewCoach, progress: viewProgress };
+  const views = { today: viewToday, learn: learn.view, coach: viewCoach, progress: viewProgress };
   if (!views[tab]) tab = 'today';
   const active = document.activeElement;
   const keepFocus = active && active.id === 'chat-input';
   const selStart = keepFocus ? active.selectionStart : 0;
   main.innerHTML = views[tab]();
   document.querySelectorAll('.tabbar button').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false'));
-  $('#overlay').innerHTML = session ? viewSession() : settingsOpen ? viewSettings() : '';
-  document.body.classList.toggle('sheet-open', !!(session || settingsOpen));
+  const ov = $('#overlay'); const wasEmpty = !ov.innerHTML;
+  ov.innerHTML = session ? viewSession() : learn.isOpen() ? learn.sheetView() : settingsOpen ? viewSettings() : '';
+  if (wasEmpty) ov.firstElementChild?.classList.add('enter'); // animate only when a sheet opens, not on every redraw
+  document.body.classList.toggle('sheet-open', !!(session || settingsOpen || learn.isOpen()));
+  document.body.dataset.tab = tab;
   if (keepFocus) { const i = $('#chat-input'); if (i) { i.focus(); i.setSelectionRange(selStart, selStart); } }
   fillRecLists(); fillAllRecs();
   autoGrow();
@@ -809,16 +900,27 @@ document.addEventListener('click', async (e) => {
   const a = el.dataset.action;
   const t = today();
   switch (a) {
-    case 'tab': tab = el.dataset.tab; window.scrollTo(0, 0); render(); break;
+    case 'tab': if (tab === el.dataset.tab && tab === 'learn') learn.reset(); tab = el.dataset.tab; window.scrollTo(0, 0); render(); break;
+    case 'go-unit': session = null; stopTimer(); tab = 'learn'; learn.openPillar('grammar'); await learn.handle('l-unit', el); window.scrollTo(0, 0); break;
+    case 'go-pillar': tab = 'learn'; learn.openPillar(el.dataset.p); window.scrollTo(0, 0); render(); break;
+    case 'new-chat': chatSince = Date.now(); voice.stopSpeaking(); render(); toast('New conversation started.'); break;
+    case 'review-chat': reviewChat(); break;
     case 'tab-close': session = null; stopTimer(); tab = el.dataset.tab; render(); break;
-    case 'open-session': session = { which: el.dataset.which, step: Math.max(0, store.day()[el.dataset.which].done.findIndex((x) => !x)) }; if (session.step < 0) session.step = 0; render(); break;
+    case 'open-session': {
+      const unit = t.week;
+      store.update((s) => { const d = store.day(); if (d.unit == null) d.unit = unit; }, { silent: true });
+      session = { which: el.dataset.which, step: Math.max(0, store.day()[el.dataset.which].done.findIndex((x) => !x)) }; if (session.step < 0) session.step = 0; render(); break;
+    }
     case 'close-session': if (rec.ctl) await finishRecord(); session = null; stopTimer(); timer.key = null; voice.stopSpeaking(); render(); break;
     case 'goto': { const n = +el.dataset.step; if (n >= 0 && n < 4) { if (rec.ctl) await finishRecord(); session.step = n; render(); $('.sheet-body')?.scrollTo(0, 0); } break; }
     case 'complete-step': {
       const { which, step } = session;
       if (step === 3) drive.renewFromTap();
       const wasDone = store.day()[which].done[step];
-      store.update((s) => { const d = store.day(); d[which].done[step] = true; d.updatedAt = Date.now(); if (!wasDone) d.minutes = (d.minutes || 0) + STEPS[which][step].mins; });
+      store.update((s) => {
+        const d = store.day(); d[which].done[step] = true; d.updatedAt = Date.now(); if (!wasDone) d.minutes = (d.minutes || 0) + STEPS[which][step].mins;
+        if (which === 'morning' && STEPS.morning[step].id === 'word') L.addWord(s, t.word); // the day's word joins the word bank
+      });
       if (step < 3) { session.step++; render(); $('.sheet-body')?.scrollTo(0, 0); }
       else {
         session = null; stopTimer(); timer.key = null; render();
@@ -835,7 +937,8 @@ document.addEventListener('click', async (e) => {
     case 'quiz': {
       const qi = +el.dataset.q; const oi = +el.dataset.o;
       store.update((s) => {
-        const d = store.day(); d.quizAnswers ||= {}; d.quizAnswers[qi] = oi; d.updatedAt = Date.now();
+        const d = store.day(); if (d.unit == null) d.unit = t.week; d.quizAnswers ||= {}; d.quizAnswers[qi] = oi; d.updatedAt = Date.now();
+        if (oi !== t.quiz[qi].a) L.fromQuiz(s, t.week, t.quiz[qi]);
         const ans = Object.keys(d.quizAnswers);
         if (ans.length === t.quiz.length) d.quiz = { score: t.quiz.filter((q, i) => d.quizAnswers[i] === q.a).length, total: t.quiz.length };
       });
@@ -848,8 +951,8 @@ document.addEventListener('click', async (e) => {
       if (!navigator.onLine) { toast('You’re offline. Your writing is saved; ask the coach when you’re back online.'); break; }
       chatBusy = true; render();
       try {
-        const reply = await askCoach([{ role: 'user', content: `Here is my evening journal. Please correct it.\n\n${text}` }], 'correct', `Grammar focus this week: ${t.grammar.title}.`);
-        store.update((s) => { const d = store.day(); d.journalFeedback = reply; d.updatedAt = Date.now(); });
+        const fb = await learn.checkWriting(text, `Evening journal. Prompt: ${t.prompt}`, 'journal');
+        store.update((s) => { const d = store.day(); d.journalFeedback = fb; d.updatedAt = Date.now(); });
         drive.scheduleSync();
       } catch (err) { toast(err.message); }
       chatBusy = false; render();
@@ -858,7 +961,6 @@ document.addEventListener('click', async (e) => {
     case 'mode': chatMode = el.dataset.mode; render(); break;
     case 'starter': sendChat(el.dataset.text); break;
     case 'retry': store.update((s) => { s.chat = s.chat.filter((m) => !m.error); }); runChat(false); break;
-    case 'clear-chat': store.update((s) => { s.chat = []; }); break;
     case 'toggle-speak': store.update((s) => { s.settings.speakReplies = !s.settings.speakReplies; }); if (!store.get().settings.speakReplies) voice.stopSpeaking(); break;
     case 'listen': {
       if (listening) { recognizer?.stop(); break; }
@@ -885,12 +987,14 @@ document.addEventListener('click', async (e) => {
     case 'weekly-report': makeReport(); break;
     case 'rec-feedback': analyse(el.dataset.id); break;
     case 'del-rec': if (confirm('Delete this recording from this phone?')) { await store.recordings.remove(el.dataset.id); render(); } break;
+    default: await learn.handle(a, el);
   }
 });
 
 document.addEventListener('input', (e) => {
   const el = e.target;
   if (el.id === 'chat-input') { draft = el.value; autoGrow(); return; }
+  if (learn.onInput(el)) { drive.scheduleSync(); return; }
   const b = el.dataset?.bind; if (!b) return;
   const silent = { silent: true };
   store.update((s) => {
@@ -931,10 +1035,11 @@ document.addEventListener('submit', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.target.id === 'chat-input' && e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia('(hover: hover)').matches) { e.preventDefault(); sendChat(e.target.value); }
-  if (e.key === 'Escape' && (session || settingsOpen)) { session = null; settingsOpen = false; stopTimer(); timer.key = null; render(); }
+  if (e.key === 'Escape' && (session || settingsOpen || learn.isOpen())) { session = null; settingsOpen = false; learn.handle('l-close', e.target); stopTimer(); timer.key = null; render(); }
 });
 
 /* ---------------- boot ---------------- */
+learn.init({ render, recorderBlock, recList, askCoach, openScenario, today, sync: () => drive.scheduleSync() });
 store.subscribe(() => render());
 drive.onStatus((st) => { driveStatus = st; if (settingsOpen) render(); });
 window.addEventListener('speakdaily:merged', () => render());
