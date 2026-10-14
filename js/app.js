@@ -2,6 +2,7 @@ import * as store from './store.js';
 import * as C from './content.js';
 import * as drive from './drive.js';
 import * as voice from './voice.js';
+import * as db from './dailybrief.js';
 import { toWavBase64 } from './audio.js';
 
 /* ---------------- helpers ---------------- */
@@ -31,6 +32,16 @@ let chatMode = 'chat';
 let chatBusy = false;
 
 /* ---------------- daily picks ---------------- */
+// Word of the day: from your Daily Brief word bank when linked, otherwise from the built-in list.
+function wordOf(di) {
+  const w = db.words();
+  if (w.length) {
+    const x = w[di % w.length];
+    return { w: x.term, m: x.meaning, e: x.sentence || `Use "${x.term}" in a sentence about the news you read today.`, from: 'Daily Brief' };
+  }
+  return C.pick(C.WORDS, di);
+}
+let talkUsual = false; // true = use the built-in talk topic even when a news story is available
 function today() {
   const key = store.todayKey();
   const di = store.dayIndex(key);
@@ -39,7 +50,8 @@ function today() {
     key, di, dayNo: di + 1, week, grammar: C.GRAMMAR[week],
     twisters: [C.pick(C.TWISTERS, di * 2), C.pick(C.TWISTERS, di * 2 + 1)],
     topic: C.pick(C.TALK_TOPICS, di),
-    word: C.pick(C.WORDS, di),
+    word: wordOf(di),
+    news: db.stories()[0] || null,
     passage: C.pick(C.READ_PASSAGES, di),
     prompt: C.pick(C.JOURNAL_PROMPTS, di),
     shadow: [0, 1, 2].map((k) => C.pick(C.SHADOW_LINES, di * 3 + k)),
@@ -271,12 +283,19 @@ function stepBody(which, idx) {
       <p class="hint">Record yourself reading the passage, then tap <b>Check my pronunciation</b>. The coach shows which words were not clear and how to say them.</p>
       ${recorderBlock('read', `Day ${t.dayNo} reading`, 120, { kind: 'pronounce', expected: t.passage.p })}
       ${recList(t.key, 'read')}`;
-    case 'talk': return `
+    case 'talk': {
+      const news = t.news && !talkUsual ? t.news : null;
+      const topic = news ? `Explain this news story in your own words: "${news.title}". What happened, and why does it matter?` : t.topic;
+      return `
       <p class="hint">Talk for one minute without stopping. If you get stuck, pause quietly. Don't say "um" or "like".</p>
-      <p class="topic">${esc(t.topic)}</p>
-      ${recorderBlock('morning', `Day ${t.dayNo} morning talk`, 60, { kind: 'talk', topic: t.topic })}
+      ${news ? `<p class="hint"><b>From your Daily Brief</b> · ${esc(news.publisher || '')}</p>` : ''}
+      <p class="topic">${esc(topic)}</p>
+      ${news?.quick ? `<p class="hint">Reminder: ${esc(news.quick)}</p>` : ''}
+      ${t.news ? `<button class="link" data-action="talk-switch">${news ? 'Use the usual topic instead' : 'Talk about a story from my Daily Brief'}</button>` : ''}
+      ${recorderBlock('morning', `Day ${t.dayNo} morning talk`, 60, { kind: 'talk', topic })}
       ${recList(t.key, 'morning')}
       <p class="hint">After recording, tap <b>Get AI feedback</b>. The coach listens and tells you about your clarity, speed and filler words.</p>`;
+    }
     case 'word': {
       const sentences = d.wordSentences || ['', '', ''];
       return `
@@ -284,6 +303,7 @@ function stepBody(which, idx) {
         <p class="word">${esc(t.word.w)} <button class="say" data-action="speak" data-text="${esc(t.word.w)}. ${esc(t.word.e)}" aria-label="Hear it">${icon('speaker')}</button></p>
         <p>${esc(t.word.m)}</p>
         <p class="ex">"${esc(t.word.e)}"</p>
+        ${t.word.from ? `<p class="ex" style="font-style:normal;font-size:14px">From your ${esc(t.word.from)} word bank</p>` : ''}
       </div>
       <p class="hint">Say three sentences with <b>${esc(t.word.w)}</b> out loud. Type them here if you like. Then use the word once today in a real conversation.</p>
       ${[0, 1, 2].map((i) => `<input class="field" data-bind="wordSentence" data-i="${i}" placeholder="Sentence ${i + 1}" value="${esc(sentences[i] || '')}">`).join('')}`;
@@ -602,7 +622,7 @@ function viewCoach() {
         </div>`).join('') : `
         <div class="empty">
           <p>Talk or type to your coach. Try one of these:</p>
-          ${STARTERS[chatMode].map((x) => `<button class="starter" data-action="starter" data-text="${esc(x)}">${esc(x)}</button>`).join('')}
+          ${(db.stories().length && chatMode === 'chat' ? ['Let’s talk about the news I read today.', ...STARTERS.chat] : STARTERS[chatMode]).map((x) => `<button class="starter" data-action="starter" data-text="${esc(x)}">${esc(x)}</button>`).join('')}
         </div>`}
       ${chatBusy ? '<div class="msg assistant typing"><span></span><span></span><span></span></div>' : ''}
     </div>
@@ -642,7 +662,8 @@ async function runChat(spoken) {
   const t = today();
   try {
     const history = store.get().chat.filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
-    const reply = await askCoach(history, chatMode, `Day ${t.dayNo}. Grammar focus this week: ${t.grammar.title}. Word of the day: ${t.word.w}.`);
+    const news = db.stories().slice(0, 3).map((x) => `"${x.title}" (${x.publisher || 'news'}): ${(x.quick || '').slice(0, 260)}`).join(' | ');
+    const reply = await askCoach(history, chatMode, `Day ${t.dayNo}. Grammar focus this week: ${t.grammar.title}. Word of the day: ${t.word.w}.${news ? ` News he read today in Daily Brief: ${news}` : ''}`);
     store.update((s) => s.chat.push({ role: 'assistant', content: reply, t: Date.now() }));
     if (store.get().settings.speakReplies || spoken) voice.speak(reply);
   } catch (e) {
@@ -666,7 +687,7 @@ function weekStats() {
     out.minutes += d.minutes || 0;
     if (d.quiz) { out.quiz[0] += d.quiz.score; out.quiz[1] += d.quiz.total; }
     out.reads += (d.reads || []).length;
-    if (d.morning?.done?.[3]) out.words.push(C.pick(C.WORDS, store.dayIndex(k)).w);
+    if (d.morning?.done?.[3]) out.words.push(wordOf(store.dayIndex(k)).w);
     if (d.fix) out.fixes.push(d.fix);
     if ((d.journal || '').trim().length > 20) out.journals++;
     for (const f of Object.values(d.feedback || {})) {
@@ -838,6 +859,17 @@ function viewSettings() {
       </section>
 
       <section>
+        <h3>Daily Brief</h3>
+        ${db.linked() ? `
+          <p class="status ${db.get().error ? 'error' : 'ok'}">${esc(db.get().error || `Linked · ${db.words().length} words · ${db.stories().length} recent stories`)}</p>
+          <p class="hint">Your word of the day comes from your Daily Brief word bank, and your morning talk can be about a story you read. ${db.get().fetchedAt ? `Updated ${ago(db.get().fetchedAt)}.` : ''}</p>
+          <div class="btns"><button class="btn" data-action="db-refresh">Update now</button><button class="btn ghost" data-action="db-off">Unlink</button></div>`
+        : `<p class="hint">Link your Daily Brief news app: in Daily Brief open Settings, sign in, tap <b>Create my link code</b>, copy it, and paste it here.</p>
+          <label>Daily Brief link code<input class="field" id="db-code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your code"></label>
+          <button class="btn primary block" data-action="db-link">Link Daily Brief</button>`}
+      </section>
+
+      <section>
         <h3>You</h3>
         <label>Your name<input class="field" data-bind="name" value="${esc(s.profile.name)}"></label>
         <label>Practice started on<input class="field" type="date" data-bind="startDate" value="${esc(s.profile.startDate)}"></label>
@@ -953,6 +985,10 @@ document.addEventListener('click', async (e) => {
     case 'add-reminders': if (!navigator.onLine) { e.preventDefault(); toast('Connect to the internet once to add the reminders.'); } break;
     case 'drive-connect': case 'drive-sync': await drive.sync({ interactive: true }); render(); break;
     case 'drive-off': drive.disconnect(); render(); break;
+    case 'talk-switch': talkUsual = !talkUsual; render(); break;
+    case 'db-link': { const c = $('#db-code')?.value.trim(); if (!c) { toast('Paste your Daily Brief code first.'); break; } await db.setCode(c); toast(db.get().error ? db.get().error : 'Daily Brief linked.'); if (db.get().error) db.disconnect(); render(); break; }
+    case 'db-refresh': await db.refresh(true); toast(db.get().error || 'Updated from Daily Brief.'); render(); break;
+    case 'db-off': if (confirm('Unlink Daily Brief?')) { db.disconnect(); render(); } break;
     case 'export': {
       const s = store.get();
       const blob = new Blob([JSON.stringify({ ...s, settings: { ...s.settings, passcode: '' } }, null, 1)], { type: 'application/json' });
@@ -1039,6 +1075,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { ap
   drive.configure(config.googleClientId);
   render();
   loadFeed();
+  db.refresh().then((changed) => changed && render());
   if (store.get().drive.connected) drive.sync({ interactive: false });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();
