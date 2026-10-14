@@ -4,7 +4,7 @@ const VERSION = 'speakdaily-v1.0.0';
 const SHELL = [
   '/', '/index.html', '/css/app.css', '/manifest.webmanifest',
   '/js/app.js', '/js/store.js', '/js/content.js', '/js/drive.js', '/js/voice.js',
-  '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png',
+  '/icons/icon-192.png', '/icons/icon.svg', '/icons/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (e) => {
