@@ -1,5 +1,7 @@
 # Speak Daily
 
+**Live app:** https://speak-daily-nu.vercel.app
+
 A daily morning and evening coach for clear speaking, grammar and reading. It is built as an installable iPhone web app (PWA): add it to your home screen from Safari and it opens and works like a normal app, including offline.
 
 ## What it does
