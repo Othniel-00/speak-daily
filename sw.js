@@ -1,6 +1,6 @@
 // Offline support: the app shell is cached on install; config is network-first with a cached fallback;
 // fonts are cached the first time they load. The AI coach and Google sign-in always need the network.
-const VERSION = 'speakdaily-v1.2.2';
+const VERSION = 'speakdaily-v1.2.3';
 const SHELL = [
   '/', '/index.html', '/css/app.css', '/manifest.webmanifest',
   '/js/app.js', '/js/store.js', '/js/content.js', '/js/drive.js', '/js/voice.js', '/js/audio.js', '/js/content-extra.js', '/js/dailybrief.js',

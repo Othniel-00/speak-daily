@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://speak-daily-nu.vercel.app/sitemap.xml
